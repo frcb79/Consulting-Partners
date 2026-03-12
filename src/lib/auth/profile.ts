@@ -25,7 +25,7 @@ export function getDefaultRouteForRole(role: AppRole | null | undefined) {
   }
 
   if (role === "super_admin") {
-    return "/app";
+    return "/admin";
   }
 
   return "/app";

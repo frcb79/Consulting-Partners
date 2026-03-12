@@ -33,7 +33,8 @@ export async function updateSession(request: NextRequest) {
   const isLoginRoute = request.nextUrl.pathname.startsWith("/login");
   const isAppRoute = request.nextUrl.pathname.startsWith("/app");
   const isPortalRoute = request.nextUrl.pathname.startsWith("/portal");
-  const isProtectedRoute = isAppRoute || isPortalRoute;
+  const isAdminRoute = request.nextUrl.pathname.startsWith("/admin");
+  const isProtectedRoute = isAppRoute || isPortalRoute || isAdminRoute;
 
   const profile = user
     ? await supabase
@@ -67,6 +68,18 @@ export async function updateSession(request: NextRequest) {
   if (user && profile?.role !== "client" && isPortalRoute) {
     const url = request.nextUrl.clone();
     url.pathname = defaultRoute;
+    return NextResponse.redirect(url);
+  }
+
+  if (user && profile?.role !== "super_admin" && isAdminRoute) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/app";
+    return NextResponse.redirect(url);
+  }
+
+  if (user && profile?.role === "super_admin" && isAppRoute && !request.nextUrl.pathname.startsWith("/app/admin")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/admin";
     return NextResponse.redirect(url);
   }
 

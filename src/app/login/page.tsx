@@ -59,6 +59,32 @@ export default function LoginPage() {
     setLoading(false);
   }
 
+  async function sendPasswordRecovery() {
+    if (!email) {
+      setMessage("Ingresa tu email para recuperar contraseña.");
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+
+    const supabase = createClient();
+    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent("/reset-password")}`;
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo,
+    });
+
+    if (error) {
+      setMessage(error.message);
+      setLoading(false);
+      return;
+    }
+
+    setMessage("Correo de recuperación enviado. Revisa tu bandeja de entrada.");
+    setLoading(false);
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto flex min-h-screen w-full max-w-md items-center px-6 py-10">
@@ -106,6 +132,15 @@ export default function LoginPage() {
             className="mt-3 w-full rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800 disabled:opacity-60"
           >
             Enviar magic link
+          </button>
+
+          <button
+            type="button"
+            onClick={sendPasswordRecovery}
+            disabled={loading || !email}
+            className="mt-2 w-full rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800 disabled:opacity-60"
+          >
+            Recuperar contraseña
           </button>
 
           {message ? <p className="mt-4 text-sm text-cyan-300">{message}</p> : null}
