@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { addManualFinding, saveFinding, updateDiagnosticStatus } from "../../actions";
 import { createClient } from "@/lib/supabase/server";
 import ExecuteButton from "./ExecuteButton";
+import RegeneratePanel from "./RegeneratePanel";
 
 type DiagnosticDetailPageProps = {
   params: Promise<{
@@ -84,6 +85,7 @@ export default async function DiagnosticDetailPage({ params }: DiagnosticDetailP
 
   const typedFindings = (findings ?? []) as Finding[];
   const validatedCount = typedFindings.filter((finding) => finding.status === "validated").length;
+  const rejectedCount = typedFindings.filter((finding) => finding.status === "rejected").length;
   const hasApiKey = Boolean(process.env.ANTHROPIC_API_KEY);
   const isPending = diagnostic.status === "pending" || diagnostic.status === "failed";
   const isProcessing = diagnostic.status === "processing";
@@ -139,6 +141,10 @@ export default async function DiagnosticDetailPage({ params }: DiagnosticDetailP
             <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Validados</p>
               <p className="mt-2 text-lg font-medium text-slate-100">{validatedCount}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Rechazados</p>
+              <p className="mt-2 text-lg font-medium text-red-300">{rejectedCount}</p>
             </div>
           </div>
         </div>
@@ -254,6 +260,15 @@ export default async function DiagnosticDetailPage({ params }: DiagnosticDetailP
                 )}
               </div>
             </div>
+
+            <RegeneratePanel
+              diagnosticId={diagnostic.id}
+              findings={typedFindings.map((finding) => ({
+                id: finding.id,
+                title: finding.title,
+                status: finding.status,
+              }))}
+            />
           </section>
 
           <aside className="space-y-6">
