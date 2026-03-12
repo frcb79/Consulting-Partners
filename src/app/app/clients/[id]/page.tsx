@@ -389,6 +389,12 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
                 >
                   Iniciar retainer
                 </Link>
+                <Link
+                  href={`/app/clients/${client.id}/revenue`}
+                  className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 transition hover:bg-slate-900"
+                >
+                  Gestionar revenue
+                </Link>
               </div>
             </div>
           </aside>

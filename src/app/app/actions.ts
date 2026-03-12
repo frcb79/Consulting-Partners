@@ -603,6 +603,74 @@ export async function createRetainerSession(formData: FormData) {
   revalidatePath(`/app/clients/${clientId}/retainer`);
 }
 
+const REVENUE_STREAMS = new Set(["diagnostico", "retainer", "implementacion", "licencia", "success_fee", "otro"]);
+const REVENUE_STATUSES = new Set(["projected", "invoiced", "collected", "cancelled"]);
+
+export async function createRevenueEvent(formData: FormData) {
+  const { supabase, user, profile } = await getAuthenticatedContext();
+  const rawClientId = formData.get("clientId");
+  const rawStream = formData.get("stream");
+  const rawAmount = formData.get("amountMxn");
+  const rawStatus = formData.get("status");
+  const rawRecognizedAt = formData.get("recognizedAt");
+  const rawNotes = formData.get("notes");
+
+  const clientId = typeof rawClientId === "string" ? rawClientId : "";
+  const stream = typeof rawStream === "string" && REVENUE_STREAMS.has(rawStream) ? rawStream : "otro";
+  const status = typeof rawStatus === "string" && REVENUE_STATUSES.has(rawStatus) ? rawStatus : "projected";
+  const recognizedAt =
+    typeof rawRecognizedAt === "string" && rawRecognizedAt ? rawRecognizedAt : new Date().toISOString().slice(0, 10);
+  const amountMxn = typeof rawAmount === "string" ? Number(rawAmount) : NaN;
+  const notes = typeof rawNotes === "string" && rawNotes.trim() ? rawNotes.trim() : null;
+
+  if (!profile?.tenant_id || !clientId || !Number.isFinite(amountMxn) || amountMxn < 0) {
+    return;
+  }
+
+  await supabase.from("revenue_events").insert({
+    tenant_id: profile.tenant_id,
+    client_id: clientId,
+    stream,
+    amount_mxn: amountMxn,
+    status,
+    recognized_at: recognizedAt,
+    notes,
+    created_by: user.id,
+  });
+
+  revalidatePath(`/app/clients/${clientId}/revenue`);
+  revalidatePath(`/app/clients/${clientId}`);
+  revalidatePath("/app/admin");
+  revalidatePath("/admin");
+}
+
+export async function updateRevenueEventStatus(formData: FormData) {
+  const { supabase } = await getAuthenticatedContext();
+  const rawRevenueId = formData.get("revenueId");
+  const rawClientId = formData.get("clientId");
+  const rawStatus = formData.get("status");
+
+  const revenueId = typeof rawRevenueId === "string" ? rawRevenueId : "";
+  const clientId = typeof rawClientId === "string" ? rawClientId : "";
+  const status = typeof rawStatus === "string" && REVENUE_STATUSES.has(rawStatus) ? rawStatus : "";
+
+  if (!revenueId || !clientId || !status) {
+    return;
+  }
+
+  await supabase
+    .from("revenue_events")
+    .update({
+      status,
+      updated_at: nowIsoString(),
+    })
+    .eq("id", revenueId);
+
+  revalidatePath(`/app/clients/${clientId}/revenue`);
+  revalidatePath("/app/admin");
+  revalidatePath("/admin");
+}
+
 function nowIsoString() {
   return new Date().toISOString();
 }
