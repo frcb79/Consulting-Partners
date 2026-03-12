@@ -454,6 +454,155 @@ export async function updateDiagnosticStatus(formData: FormData) {
   revalidatePath(`/app/diagnostics/${diagnosticId}`);
 }
 
+export async function createRetainer(formData: FormData) {
+  const { supabase, user, profile } = await getAuthenticatedContext();
+  const rawClientId = formData.get("clientId");
+  const rawName = formData.get("name");
+  const rawStatus = formData.get("status");
+  const rawMonthlyFee = formData.get("monthlyFee");
+  const rawStartDate = formData.get("startDate");
+  const rawEndDate = formData.get("endDate");
+  const rawScopeSummary = formData.get("scopeSummary");
+
+  const clientId = typeof rawClientId === "string" ? rawClientId : "";
+  const name = typeof rawName === "string" ? rawName.trim() : "";
+  const status = typeof rawStatus === "string" ? rawStatus : "active";
+  const monthlyFee = typeof rawMonthlyFee === "string" && rawMonthlyFee.trim() ? Number(rawMonthlyFee) : null;
+  const startDate = typeof rawStartDate === "string" && rawStartDate ? rawStartDate : null;
+  const endDate = typeof rawEndDate === "string" && rawEndDate ? rawEndDate : null;
+  const scopeSummary = typeof rawScopeSummary === "string" && rawScopeSummary.trim() ? rawScopeSummary.trim() : null;
+
+  if (!profile?.tenant_id || !clientId || !name) {
+    return;
+  }
+
+  await supabase.from("retainers").insert({
+    tenant_id: profile.tenant_id,
+    client_id: clientId,
+    name,
+    status,
+    monthly_fee: Number.isFinite(monthlyFee) ? monthlyFee : null,
+    start_date: startDate,
+    end_date: endDate,
+    scope_summary: scopeSummary,
+    owner_user_id: user.id,
+    created_by: user.id,
+  });
+
+  revalidatePath(`/app/clients/${clientId}/retainer`);
+}
+
+export async function createKpi(formData: FormData) {
+  const { supabase, user, profile } = await getAuthenticatedContext();
+  const rawClientId = formData.get("clientId");
+  const rawRetainerId = formData.get("retainerId");
+  const rawName = formData.get("name");
+  const rawUnit = formData.get("unit");
+  const rawBaseline = formData.get("baselineValue");
+  const rawTarget = formData.get("targetValue");
+  const rawDirection = formData.get("direction");
+  const rawNotes = formData.get("notes");
+
+  const clientId = typeof rawClientId === "string" ? rawClientId : "";
+  const retainerId = typeof rawRetainerId === "string" && rawRetainerId ? rawRetainerId : null;
+  const name = typeof rawName === "string" ? rawName.trim() : "";
+  const unit = typeof rawUnit === "string" && rawUnit.trim() ? rawUnit.trim() : null;
+  const baselineValue = typeof rawBaseline === "string" && rawBaseline.trim() ? Number(rawBaseline) : null;
+  const targetValue = typeof rawTarget === "string" && rawTarget.trim() ? Number(rawTarget) : null;
+  const direction = typeof rawDirection === "string" ? rawDirection : "increase";
+  const notes = typeof rawNotes === "string" && rawNotes.trim() ? rawNotes.trim() : null;
+
+  if (!profile?.tenant_id || !clientId || !name) {
+    return;
+  }
+
+  await supabase.from("kpis").insert({
+    tenant_id: profile.tenant_id,
+    client_id: clientId,
+    retainer_id: retainerId,
+    name,
+    unit,
+    baseline_value: Number.isFinite(baselineValue) ? baselineValue : null,
+    target_value: Number.isFinite(targetValue) ? targetValue : null,
+    direction,
+    notes,
+    created_by: user.id,
+  });
+
+  revalidatePath(`/app/clients/${clientId}/retainer`);
+}
+
+export async function addKpiReading(formData: FormData) {
+  const { supabase, user, profile } = await getAuthenticatedContext();
+  const rawClientId = formData.get("clientId");
+  const rawKpiId = formData.get("kpiId");
+  const rawReadingDate = formData.get("readingDate");
+  const rawValue = formData.get("value");
+  const rawNote = formData.get("note");
+
+  const clientId = typeof rawClientId === "string" ? rawClientId : "";
+  const kpiId = typeof rawKpiId === "string" ? rawKpiId : "";
+  const readingDate = typeof rawReadingDate === "string" && rawReadingDate ? rawReadingDate : null;
+  const value = typeof rawValue === "string" && rawValue.trim() ? Number(rawValue) : NaN;
+  const note = typeof rawNote === "string" && rawNote.trim() ? rawNote.trim() : null;
+
+  if (!profile?.tenant_id || !clientId || !kpiId || !readingDate || Number.isNaN(value)) {
+    return;
+  }
+
+  await supabase.from("kpi_readings").insert({
+    tenant_id: profile.tenant_id,
+    client_id: clientId,
+    kpi_id: kpiId,
+    reading_date: readingDate,
+    value,
+    note,
+    created_by: user.id,
+  });
+
+  revalidatePath(`/app/clients/${clientId}/retainer`);
+}
+
+export async function createRetainerSession(formData: FormData) {
+  const { supabase, user, profile } = await getAuthenticatedContext();
+  const rawClientId = formData.get("clientId");
+  const rawRetainerId = formData.get("retainerId");
+  const rawSessionDate = formData.get("sessionDate");
+  const rawTitle = formData.get("title");
+  const rawSummary = formData.get("summary");
+  const rawOutcomes = formData.get("outcomes");
+  const rawRisks = formData.get("risks");
+  const rawNextSteps = formData.get("nextSteps");
+
+  const clientId = typeof rawClientId === "string" ? rawClientId : "";
+  const retainerId = typeof rawRetainerId === "string" && rawRetainerId ? rawRetainerId : null;
+  const sessionDate = typeof rawSessionDate === "string" && rawSessionDate ? rawSessionDate : null;
+  const title = typeof rawTitle === "string" ? rawTitle.trim() : "";
+  const summary = typeof rawSummary === "string" && rawSummary.trim() ? rawSummary.trim() : null;
+  const outcomes = typeof rawOutcomes === "string" && rawOutcomes.trim() ? rawOutcomes.trim() : null;
+  const risks = typeof rawRisks === "string" && rawRisks.trim() ? rawRisks.trim() : null;
+  const nextSteps = typeof rawNextSteps === "string" && rawNextSteps.trim() ? rawNextSteps.trim() : null;
+
+  if (!profile?.tenant_id || !clientId || !sessionDate || !title) {
+    return;
+  }
+
+  await supabase.from("retainer_sessions").insert({
+    tenant_id: profile.tenant_id,
+    client_id: clientId,
+    retainer_id: retainerId,
+    session_date: sessionDate,
+    title,
+    summary,
+    outcomes,
+    risks,
+    next_steps: nextSteps,
+    created_by: user.id,
+  });
+
+  revalidatePath(`/app/clients/${clientId}/retainer`);
+}
+
 function nowIsoString() {
   return new Date().toISOString();
 }

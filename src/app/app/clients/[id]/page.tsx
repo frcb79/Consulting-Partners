@@ -383,7 +383,12 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
                 <a href="#documentos" className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 transition hover:bg-slate-900">
                   Subir documento
                 </a>
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">Iniciar retainer</div>
+                <Link
+                  href={`/app/clients/${client.id}/retainer`}
+                  className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 transition hover:bg-slate-900"
+                >
+                  Iniciar retainer
+                </Link>
               </div>
             </div>
           </aside>
