@@ -83,6 +83,14 @@ export default async function AppPage({ searchParams }: AppPageProps) {
               <h1 className="mt-3 text-3xl font-semibold">Workspace privado</h1>
               <p className="mt-2 text-slate-300">Sesion activa para: {user.email}</p>
               <p className="mt-1 text-sm text-slate-400">Rol: {profile.role}</p>
+              {profile.role === "super_admin" ? (
+                <Link
+                  href="/app/admin"
+                  className="mt-3 inline-flex rounded-lg border border-cyan-700/60 bg-cyan-950/30 px-3 py-1.5 text-xs uppercase tracking-[0.18em] text-cyan-300 transition hover:bg-cyan-900/30"
+                >
+                  Abrir panel Super Admin
+                </Link>
+              ) : null}
             </div>
 
             <form action={signOut}>
