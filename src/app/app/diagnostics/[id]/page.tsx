@@ -4,6 +4,7 @@ import { addManualFinding, saveFinding, updateDiagnosticStatus } from "../../act
 import { createClient } from "@/lib/supabase/server";
 import ExecuteButton from "./ExecuteButton";
 import RegeneratePanel from "./RegeneratePanel";
+import ProcessingTimeline from "./ProcessingTimeline";
 
 type DiagnosticDetailPageProps = {
   params: Promise<{
@@ -54,7 +55,7 @@ export default async function DiagnosticDetailPage({ params }: DiagnosticDetailP
 
   const { data: diagnostic } = await supabase
     .from("diagnostics")
-    .select("id, title, analysis_type, framework, areas, additional_context, validation_mode, turbo_mode, web_research, detail_level, status, created_at, processed_at, clients(id, name)")
+    .select("id, title, analysis_type, framework, areas, additional_context, validation_mode, turbo_mode, web_research, detail_level, status, created_at, processing_started_at, processed_at, processing_step, processing_step_label, input_tokens, output_tokens, estimated_cost_usd, primary_model, validation_model, processing_error, clients(id, name)")
     .eq("id", id)
     .single();
 
@@ -151,6 +152,23 @@ export default async function DiagnosticDetailPage({ params }: DiagnosticDetailP
 
         <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
           <section className="space-y-6">
+            <ProcessingTimeline
+              diagnosticId={diagnostic.id}
+              initialSnapshot={{
+                status: diagnostic.status,
+                processing_started_at: diagnostic.processing_started_at,
+                processed_at: diagnostic.processed_at,
+                processing_step: diagnostic.processing_step ?? 0,
+                processing_step_label: diagnostic.processing_step_label,
+                input_tokens: diagnostic.input_tokens ?? 0,
+                output_tokens: diagnostic.output_tokens ?? 0,
+                estimated_cost_usd: Number(diagnostic.estimated_cost_usd ?? 0),
+                primary_model: diagnostic.primary_model,
+                validation_model: diagnostic.validation_model,
+                processing_error: diagnostic.processing_error,
+              }}
+            />
+
             {(isPending || isProcessing) && (
               <div className="rounded-3xl border border-cyan-900/60 bg-cyan-950/20 p-6">
                 <p className="text-xs uppercase tracking-[0.18em] text-cyan-400">

@@ -40,6 +40,19 @@ type ClientInfo = {
   strategic_context?: string | null;
 };
 
+const PRIMARY_MODEL = "claude-3-5-sonnet-20241022";
+const VALIDATION_MODEL = "gpt-4o";
+
+const STEP_LABELS: Record<number, string> = {
+  1: "Inicializando diagnóstico",
+  2: "Cargando documentos asociados",
+  3: "Extrayendo texto de fuentes",
+  4: "Generando hallazgos con IA",
+  5: "Validación cruzada",
+  6: "Persistiendo hallazgos",
+  7: "Completado",
+};
+
 const FRAMEWORK_NOTES: Record<string, string> = {
   MECE: "Structure findings so they are Mutually Exclusive and Collectively Exhaustive — no overlap, full coverage of critical areas",
   "Full Potential": "Identify the full performance potential vs current state, sized by business impact",
@@ -134,6 +147,45 @@ Rules:
 Return ONLY the corrected findings in the required schema.`;
 }
 
+function estimateTokensFromText(text: string) {
+  return Math.max(1, Math.ceil(text.length / 4));
+}
+
+function estimateCostUsd(params: {
+  model: "claude" | "gpt-4o";
+  inputTokens: number;
+  outputTokens: number;
+}) {
+  const { model, inputTokens, outputTokens } = params;
+  const pricing =
+    model === "claude"
+      ? { inPerMillion: 3, outPerMillion: 15 }
+      : { inPerMillion: 5, outPerMillion: 15 };
+
+  const inputCost = (inputTokens / 1_000_000) * pricing.inPerMillion;
+  const outputCost = (outputTokens / 1_000_000) * pricing.outPerMillion;
+  return Number((inputCost + outputCost).toFixed(6));
+}
+
+async function updateProgress(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  diagnosticId: string;
+  step: number;
+  extra?: Record<string, unknown>;
+}) {
+  const { supabase, diagnosticId, step, extra } = params;
+
+  await supabase
+    .from("diagnostics")
+    .update({
+      processing_step: step,
+      processing_step_label: STEP_LABELS[step] ?? "Procesando",
+      updated_at: new Date().toISOString(),
+      ...extra,
+    })
+    .eq("id", diagnosticId);
+}
+
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json(
@@ -186,19 +238,32 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Este diagnóstico ya está completado y no se puede re-ejecutar" }, { status: 400 });
   }
 
-  // Mark as processing before long-running work
   await supabase
     .from("diagnostics")
-    .update({ status: "processing", processing_started_at: new Date().toISOString() })
+    .update({
+      status: "processing",
+      processing_started_at: new Date().toISOString(),
+      processed_at: null,
+      processing_error: null,
+      input_tokens: 0,
+      output_tokens: 0,
+      estimated_cost_usd: 0,
+      primary_model: PRIMARY_MODEL,
+      validation_model: null,
+    })
     .eq("id", diagnosticId);
 
+  await updateProgress({ supabase, diagnosticId, step: 1 });
+
   // Fetch linked documents
+  await updateProgress({ supabase, diagnosticId, step: 2 });
   const { data: docLinks } = await supabase
     .from("diagnostic_documents")
     .select("documents(id, name, category, storage_path, mime_type)")
     .eq("diagnostic_id", diagnosticId);
 
   // Extract text from PDF and plain-text documents
+  await updateProgress({ supabase, diagnosticId, step: 3 });
   const documentTexts: DocumentText[] = [];
 
   for (const link of docLinks ?? []) {
@@ -247,33 +312,81 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   });
 
   try {
+    await updateProgress({ supabase, diagnosticId, step: 4 });
+
     const { object } = await generateObject({
-      model: anthropic("claude-3-5-sonnet-20241022"),
+      model: anthropic(PRIMARY_MODEL),
       schema: FindingsSchema,
       prompt,
       temperature: 0.3,
     });
 
+    const promptInputTokens = estimateTokensFromText(prompt);
+    const claudeOutputText = JSON.stringify(object.findings);
+    const claudeOutputTokens = estimateTokensFromText(claudeOutputText);
+    let totalInputTokens = promptInputTokens;
+    let totalOutputTokens = claudeOutputTokens;
+    let totalCostUsd = estimateCostUsd({
+      model: "claude",
+      inputTokens: promptInputTokens,
+      outputTokens: claudeOutputTokens,
+    });
+
+    await supabase
+      .from("diagnostics")
+      .update({
+        input_tokens: totalInputTokens,
+        output_tokens: totalOutputTokens,
+        estimated_cost_usd: totalCostUsd,
+      })
+      .eq("id", diagnosticId);
+
     let finalFindings = object.findings;
     let validationModel: string | null = null;
 
+    await updateProgress({ supabase, diagnosticId, step: 5 });
+
     if (diagnostic.validation_mode && process.env.OPENAI_API_KEY) {
+      const crossValidationPrompt = buildCrossValidationPrompt({
+        framework: diagnostic.framework as string,
+        areas,
+        originalFindings: object.findings,
+      });
+
       const { object: validatedObject } = await generateObject({
-        model: openai("gpt-4o"),
+        model: openai(VALIDATION_MODEL),
         schema: FindingsSchema,
-        prompt: buildCrossValidationPrompt({
-          framework: diagnostic.framework as string,
-          areas,
-          originalFindings: object.findings,
-        }),
+        prompt: crossValidationPrompt,
         temperature: 0.2,
       });
 
       finalFindings = validatedObject.findings;
-      validationModel = "gpt-4o";
+      validationModel = VALIDATION_MODEL;
+
+      const validationInputTokens = estimateTokensFromText(crossValidationPrompt);
+      const validationOutputTokens = estimateTokensFromText(JSON.stringify(validatedObject.findings));
+
+      totalInputTokens += validationInputTokens;
+      totalOutputTokens += validationOutputTokens;
+      totalCostUsd += estimateCostUsd({
+        model: "gpt-4o",
+        inputTokens: validationInputTokens,
+        outputTokens: validationOutputTokens,
+      });
+
+      await supabase
+        .from("diagnostics")
+        .update({
+          input_tokens: totalInputTokens,
+          output_tokens: totalOutputTokens,
+          estimated_cost_usd: Number(totalCostUsd.toFixed(6)),
+          validation_model: VALIDATION_MODEL,
+        })
+        .eq("id", diagnosticId);
     }
 
     // Remove any existing placeholder findings before inserting real ones
+    await updateProgress({ supabase, diagnosticId, step: 6 });
     await supabase.from("findings").delete().eq("diagnostic_id", diagnosticId);
 
     await supabase.from("findings").insert(
@@ -290,7 +403,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
     await supabase
       .from("diagnostics")
-      .update({ status: "qc", processed_at: new Date().toISOString() })
+      .update({
+        status: "qc",
+        processed_at: new Date().toISOString(),
+        processing_step: 7,
+        processing_step_label: STEP_LABELS[7],
+        input_tokens: totalInputTokens,
+        output_tokens: totalOutputTokens,
+        estimated_cost_usd: Number(totalCostUsd.toFixed(6)),
+      })
       .eq("id", diagnosticId);
 
     return NextResponse.json({
@@ -299,8 +420,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       crossValidated: validationModel === "gpt-4o",
     });
   } catch (err) {
-    await supabase.from("diagnostics").update({ status: "failed" }).eq("id", diagnosticId);
     const message = err instanceof Error ? err.message : "Error desconocido";
+    await supabase
+      .from("diagnostics")
+      .update({
+        status: "failed",
+        processing_error: message,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", diagnosticId);
     return NextResponse.json({ error: `Error en pipeline IA: ${message}` }, { status: 500 });
   }
 }
