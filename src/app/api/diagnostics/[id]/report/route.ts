@@ -61,17 +61,17 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("tenant_id, role")
+    .select("tenant_id, role, client_id")
     .eq("user_id", user.id)
     .single();
 
-  if (!profile?.tenant_id || profile.role === "client") {
+  if (!profile?.tenant_id) {
     return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
   }
 
   const { data: diagnostic } = await supabase
     .from("diagnostics")
-    .select("id, title, framework, areas, status, created_at, processed_at, tenant_id, clients(id, name)")
+    .select("id, title, framework, areas, status, client_id, created_at, processed_at, tenant_id, clients(id, name)")
     .eq("id", diagnosticId)
     .single();
 
@@ -81,6 +81,19 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
   if (diagnostic.tenant_id !== profile.tenant_id) {
     return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
+  }
+
+  if (profile.role === "client" && profile.client_id !== diagnostic.client_id) {
+    return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
+  }
+
+  if (profile.role === "client") {
+    await supabase.from("client_report_views").upsert({
+      tenant_id: profile.tenant_id,
+      diagnostic_id: diagnostic.id,
+      client_user_id: user.id,
+      viewed_at: new Date().toISOString(),
+    });
   }
 
   const { data: findings } = await supabase
