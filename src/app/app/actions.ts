@@ -343,9 +343,7 @@ export async function createDiagnosticRun(formData: FormData) {
       turbo_mode: turboMode,
       web_research: webResearch,
       detail_level: detailLevel,
-      status: "qc",
-      processing_started_at: nowIsoString(),
-      processed_at: nowIsoString(),
+      status: "pending",
       created_by: user.id,
     })
     .select("id")
@@ -360,20 +358,6 @@ export async function createDiagnosticRun(formData: FormData) {
       selectedDocumentIds.map((documentId) => ({
         diagnostic_id: diagnostic.id,
         document_id: documentId,
-      }))
-    );
-  }
-
-  if (selectedAreas.length) {
-    await supabase.from("findings").insert(
-      selectedAreas.slice(0, 5).map((area, index) => ({
-        diagnostic_id: diagnostic.id,
-        title: `Hallazgo inicial: ${area}`,
-        body: `Espacio listo para capturar el hallazgo del area ${area}. Integra aqui el analisis validado una vez se conecte el pipeline IA o durante revision manual.`,
-        so_what: `Define la implicacion ejecutiva para ${area}.`,
-        impact_estimate: "Pendiente",
-        status: "draft",
-        display_order: index,
       }))
     );
   }

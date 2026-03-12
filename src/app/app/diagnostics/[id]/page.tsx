@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { addManualFinding, saveFinding, updateDiagnosticStatus } from "../../actions";
 import { createClient } from "@/lib/supabase/server";
+import ExecuteButton from "./ExecuteButton";
 
 type DiagnosticDetailPageProps = {
   params: Promise<{
@@ -83,6 +84,9 @@ export default async function DiagnosticDetailPage({ params }: DiagnosticDetailP
 
   const typedFindings = (findings ?? []) as Finding[];
   const validatedCount = typedFindings.filter((finding) => finding.status === "validated").length;
+  const hasApiKey = Boolean(process.env.ANTHROPIC_API_KEY);
+  const isPending = diagnostic.status === "pending" || diagnostic.status === "failed";
+  const isProcessing = diagnostic.status === "processing";
 
   return (
     <main className="min-h-screen bg-slate-950 p-6 text-slate-100 md:p-8">
@@ -94,7 +98,20 @@ export default async function DiagnosticDetailPage({ params }: DiagnosticDetailP
           <p className="mt-4 text-xs uppercase tracking-[0.24em] text-cyan-400">Diagnostico</p>
           <h1 className="mt-3 text-3xl font-semibold">{diagnostic.title}</h1>
           <p className="mt-2 text-sm text-slate-400">
-            {diagnosticClient.name} · {diagnostic.framework} · estado {diagnostic.status}
+            {diagnosticClient.name} · {diagnostic.framework} ·{" "}
+            <span
+              className={
+                diagnostic.status === "qc" || diagnostic.status === "completed"
+                  ? "text-emerald-400"
+                  : diagnostic.status === "failed"
+                  ? "text-red-400"
+                  : diagnostic.status === "processing"
+                  ? "text-cyan-400"
+                  : "text-amber-400"
+              }
+            >
+              {diagnostic.status}
+            </span>
           </p>
           <div className="mt-6 grid gap-4 md:grid-cols-4">
             <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
@@ -118,6 +135,38 @@ export default async function DiagnosticDetailPage({ params }: DiagnosticDetailP
 
         <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
           <section className="space-y-6">
+            {(isPending || isProcessing) && (
+              <div className="rounded-3xl border border-cyan-900/60 bg-cyan-950/20 p-6">
+                <p className="text-xs uppercase tracking-[0.18em] text-cyan-400">
+                  {isProcessing ? "Procesando…" : "Listo para ejecutar"}
+                </p>
+                <h2 className="mt-2 text-lg font-semibold">
+                  {isProcessing
+                    ? "El análisis IA está en curso"
+                    : "Ejecuta el análisis IA para generar hallazgos"}
+                </h2>
+                <p className="mt-2 text-sm text-slate-400">
+                  {isProcessing
+                    ? "Claude Sonnet está procesando los documentos y construyendo los hallazgos. Actualiza la página en unos momentos."
+                    : "El diagnóstico está configurado. Pulsa el botón para que Claude Sonnet analice los documentos y genere los hallazgos automáticamente."}
+                </p>
+                {!isProcessing && (
+                  <div className="mt-5">
+                    <ExecuteButton
+                      diagnosticId={diagnostic.id}
+                      hasApiKey={hasApiKey}
+                      currentStatus={diagnostic.status}
+                    />
+                  </div>
+                )}
+                {isProcessing && (
+                  <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                    <div className="h-full w-2/3 animate-pulse rounded-full bg-cyan-500" />
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -188,7 +237,9 @@ export default async function DiagnosticDetailPage({ params }: DiagnosticDetailP
                   ))
                 ) : (
                   <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-sm text-slate-400">
-                    Aun no hay hallazgos. Agrega uno manual para iniciar la revision.
+                    {isPending || isProcessing
+                      ? "Los hallazgos aparecerán aquí una vez que se complete el análisis IA."
+                      : "Aún no hay hallazgos. Agrega uno manual o ejecuta el análisis IA."}
                   </div>
                 )}
               </div>
@@ -198,14 +249,50 @@ export default async function DiagnosticDetailPage({ params }: DiagnosticDetailP
           <aside className="space-y-6">
             <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
               <h2 className="text-lg font-semibold">Procesamiento</h2>
-              <div className="mt-4 space-y-3 text-sm text-slate-300">
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">1. Configuracion guardada</div>
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">2. Documentos asociados</div>
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">3. QC listo para edicion</div>
+              <div className="mt-4 space-y-2 text-sm">
+                {[
+                  { label: "1. Configuración guardada", done: true },
+                  {
+                    label: "2. Documentos asociados",
+                    done: typedSelectedDocuments.length > 0,
+                    note: typedSelectedDocuments.length === 0 ? "(sin documentos — análisis por contexto)" : undefined,
+                  },
+                  {
+                    label: "3. Análisis IA ejecutado",
+                    done: diagnostic.status === "qc" || diagnostic.status === "completed",
+                    inProgress: diagnostic.status === "processing",
+                  },
+                  {
+                    label: "4. QC de hallazgos",
+                    done: diagnostic.status === "completed",
+                    inProgress: diagnostic.status === "qc",
+                  },
+                ].map((step, i) => (
+                  <div
+                    key={i}
+                    className={`rounded-2xl border px-4 py-3 ${
+                      step.done
+                        ? "border-emerald-800/60 bg-emerald-950/20 text-emerald-300"
+                        : step.inProgress
+                        ? "border-cyan-800/60 bg-cyan-950/20 text-cyan-300"
+                        : "border-slate-800 bg-slate-950/70 text-slate-500"
+                    }`}
+                  >
+                    {step.label}
+                    {step.note && <span className="ml-1 text-xs opacity-70">{step.note}</span>}
+                    {step.inProgress && <span className="ml-2 animate-pulse text-xs">…</span>}
+                  </div>
+                ))}
               </div>
-              <p className="mt-4 text-sm leading-6 text-slate-400">
-                El pipeline IA externo se conecta sobre esta estructura. Por ahora el diagnostico ya persiste configuracion, fuentes y hallazgos para revision manual.
-              </p>
+              {isPending && (
+                <div className="mt-4">
+                  <ExecuteButton
+                    diagnosticId={diagnostic.id}
+                    hasApiKey={hasApiKey}
+                    currentStatus={diagnostic.status}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
