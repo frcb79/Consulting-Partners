@@ -115,7 +115,7 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
 
         <div className="grid gap-6 lg:grid-cols-[1.35fr_0.95fr]">
           <section className="space-y-6">
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
+            <div id="documentos" className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
               <h2 className="text-lg font-semibold">Overview</h2>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
@@ -131,7 +131,7 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
+            <div id="portal" className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
               <h2 className="text-lg font-semibold">Contacto principal</h2>
               <div className="mt-4 grid gap-4 sm:grid-cols-3">
                 <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">
@@ -371,8 +371,18 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
                 >
                   Nuevo diagnostico
                 </Link>
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">Invitar al portal</div>
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">Subir documento</div>
+                <Link
+                  href={`/app/clients/${client.id}/chat`}
+                  className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 transition hover:bg-slate-900"
+                >
+                  Abrir chat IA
+                </Link>
+                <a href="#portal" className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 transition hover:bg-slate-900">
+                  Invitar al portal
+                </a>
+                <a href="#documentos" className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 transition hover:bg-slate-900">
+                  Subir documento
+                </a>
                 <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">Iniciar retainer</div>
               </div>
             </div>
