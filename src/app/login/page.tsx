@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getAuthErrorMessage } from "@/lib/auth/errors";
 
 export default function LoginPage() {
   const [nextUrl] = useState(() => {
@@ -27,7 +28,7 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
-      setMessage(error.message);
+      setMessage(getAuthErrorMessage(error.message));
       setLoading(false);
       return;
     }
@@ -50,7 +51,7 @@ export default function LoginPage() {
     });
 
     if (error) {
-      setMessage(error.message);
+      setMessage(getAuthErrorMessage(error.message));
       setLoading(false);
       return;
     }
@@ -76,7 +77,7 @@ export default function LoginPage() {
     });
 
     if (error) {
-      setMessage(error.message);
+      setMessage(getAuthErrorMessage(error.message));
       setLoading(false);
       return;
     }
