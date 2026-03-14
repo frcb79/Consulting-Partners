@@ -10,6 +10,13 @@ import {
 } from "../../actions";
 import { createClient } from "@/lib/supabase/server";
 
+const STATUS_LABELS: Record<string, string> = {
+  prospect: "Prospecto",
+  active: "Activo",
+  retainer: "En retainer",
+  inactive: "Inactivo",
+};
+
 type ClientDetailPageProps = {
   params: Promise<{
     id: string;
@@ -100,7 +107,7 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
 
           <div className="flex flex-wrap items-center gap-3">
             <span className="rounded-full border border-cyan-500/40 bg-cyan-500/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">
-              {client.status}
+              {STATUS_LABELS[client.status] ?? client.status}
             </span>
             <form action={signOut}>
               <button
@@ -120,7 +127,7 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Estado</p>
-                  <p className="mt-2 text-lg font-medium text-slate-100">{client.status}</p>
+                  <p className="mt-2 text-lg font-medium text-slate-100">{STATUS_LABELS[client.status] ?? client.status}</p>
                 </div>
                 <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Ultima actualizacion</p>
@@ -300,11 +307,14 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
                   defaultValue={client.status}
                   className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
                 >
-                  <option value="prospect">Prospect</option>
-                  <option value="active">Active</option>
-                  <option value="retainer">Retainer</option>
-                  <option value="inactive">Inactive</option>
+                  <option value="prospect">Prospecto</option>
+                  <option value="active">Activo</option>
+                  <option value="retainer">En retainer</option>
+                  <option value="inactive">Inactivo</option>
                 </select>
+                <p className="text-xs leading-5 text-slate-500">
+                  En retainer = cliente con contrato mensual recurrente para seguimiento continuo.
+                </p>
                 <button
                   type="submit"
                   className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-cyan-400"
@@ -365,6 +375,12 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
             <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
               <h2 className="text-lg font-semibold">Acciones rapidas</h2>
               <div className="mt-4 grid gap-3 text-sm text-slate-300">
+                <Link
+                  href={`/app/clients/${client.id}/plan`}
+                  className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 transition hover:bg-slate-900"
+                >
+                  Definir plan de consultoria
+                </Link>
                 <Link
                   href={`/app/diagnostics/new?clientId=${client.id}`}
                   className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 transition hover:bg-slate-900"

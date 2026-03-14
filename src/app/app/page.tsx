@@ -3,6 +3,13 @@ import { redirect } from "next/navigation";
 import { createClientRecord, signOut } from "./actions";
 import { createClient } from "@/lib/supabase/server";
 
+const STATUS_LABELS: Record<string, string> = {
+  prospect: "Prospecto",
+  active: "Activo",
+  retainer: "En retainer",
+  inactive: "Inactivo",
+};
+
 type AppPageProps = {
   searchParams?: Promise<{
     q?: string;
@@ -170,7 +177,7 @@ export default async function AppPage({ searchParams }: AppPageProps) {
                         <p className="mt-1 text-xs text-slate-500">{client.company_size ?? "Tamano sin definir"}</p>
                       </div>
                       <p className="text-slate-300">{client.industry ?? "Sin industria"}</p>
-                      <p className="text-slate-300">{client.status}</p>
+                      <p className="text-slate-300">{STATUS_LABELS[client.status] ?? client.status}</p>
                       <div className="text-slate-300">
                         <p>{client.primary_contact_name ?? "Sin contacto"}</p>
                         <p className="mt-1 text-xs text-slate-500">{client.primary_contact_email ?? "Sin email"}</p>
@@ -209,9 +216,37 @@ export default async function AppPage({ searchParams }: AppPageProps) {
                     placeholder="Industria"
                     className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
                   />
+                  <select
+                    name="employeeRange"
+                    defaultValue=""
+                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
+                  >
+                    <option value="">Rango de empleados</option>
+                    <option value="1-49">1-49</option>
+                    <option value="50-199">50-199</option>
+                    <option value="200-500">200-500</option>
+                    <option value="500-999">500-999</option>
+                    <option value="1000-2000">1000-2000</option>
+                    <option value="2000+">2000+</option>
+                  </select>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <select
+                    name="annualRevenueRange"
+                    defaultValue=""
+                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
+                  >
+                    <option value="">Ventas anuales (MXN)</option>
+                    <option value="&lt;$10M">Menor a $10M</option>
+                    <option value="$10M-$50M">$10M-$50M</option>
+                    <option value="$50M-$250M">$50M-$250M</option>
+                    <option value="$250M-$500M">$250M-$500M</option>
+                    <option value="$500M-$1000M">$500M-$1000M</option>
+                    <option value="$1000M+">Mayor a $1000M</option>
+                  </select>
                   <input
                     name="companySize"
-                    placeholder="Tamano de empresa"
+                    placeholder="Tamano legacy (opcional)"
                     className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
                   />
                 </div>
@@ -220,10 +255,10 @@ export default async function AppPage({ searchParams }: AppPageProps) {
                   defaultValue="prospect"
                   className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
                 >
-                  <option value="prospect">Prospect</option>
-                  <option value="active">Active</option>
-                  <option value="retainer">Retainer</option>
-                  <option value="inactive">Inactive</option>
+                  <option value="prospect">Prospecto</option>
+                  <option value="active">Activo</option>
+                  <option value="retainer">En retainer</option>
+                  <option value="inactive">Inactivo</option>
                 </select>
               </div>
 

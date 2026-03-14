@@ -3,18 +3,27 @@ import { redirect } from "next/navigation";
 import { createDiagnosticRun } from "../../actions";
 import { createClient } from "@/lib/supabase/server";
 
-const FRAMEWORKS = ["MECE", "Full Potential", "McKinsey 7S", "Porter 5 Fuerzas", "BMC", "Custom"];
+const FRAMEWORKS = [
+  "MECE",
+  "Full Potential",
+  "McKinsey 7S",
+  "Porter 5 Fuerzas",
+  "BMC",
+  "custom",
+];
 const AREAS = ["Finanzas", "Operaciones", "Comercial", "Organizacion", "Tecnologia", "Talento"];
 
 type NewDiagnosticPageProps = {
   searchParams?: Promise<{
     clientId?: string;
+    error?: string;
   }>;
 };
 
 export default async function NewDiagnosticPage({ searchParams }: NewDiagnosticPageProps) {
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const preselectedClientId = resolvedSearchParams?.clientId ?? "";
+  const errorCode = resolvedSearchParams?.error ?? "";
   const supabase = await createClient();
   const {
     data: { user },
@@ -46,6 +55,26 @@ export default async function NewDiagnosticPage({ searchParams }: NewDiagnosticP
           <p className="mt-2 max-w-3xl text-sm text-slate-400">
             Flujo base de diagnostico con persistencia real de configuracion, documentos y hallazgos.
           </p>
+          {errorCode === "missing_fields" ? (
+            <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+              Completa cliente, titulo y framework antes de crear el diagnostico.
+            </p>
+          ) : null}
+          {errorCode === "create_failed" ? (
+            <p className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+              No se pudo crear el diagnostico. Revisa los datos e intenta nuevamente.
+            </p>
+          ) : null}
+          {errorCode === "quota_reports" ? (
+            <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+              Alcanzaste el limite mensual de diagnosticos para tu plan actual. Contacta a Super Admin para ampliar cupo.
+            </p>
+          ) : null}
+          {errorCode === "quota_research" ? (
+            <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+              Alcanzaste el limite mensual de investigacion premium para tu plan actual.
+            </p>
+          ) : null}
         </div>
 
         <form action={createDiagnosticRun} className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
@@ -83,10 +112,21 @@ export default async function NewDiagnosticPage({ searchParams }: NewDiagnosticP
                     className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300"
                   >
                     <input type="radio" name="framework" value={framework} defaultChecked={framework === "MECE"} />
-                    <span>{framework}</span>
+                    <span>{framework === "custom" ? "Framework del consultor" : framework}</span>
                   </label>
                 ))}
               </div>
+              <input
+                name="customFramework"
+                placeholder="Nombre del framework personalizado (si seleccionaste Framework del consultor)"
+                className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
+              />
+              <textarea
+                name="customReportFormat"
+                rows={3}
+                placeholder="Formato de reporte que usa el consultor (estructura, secciones, estilo de entrega)"
+                className="rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
+              />
               <div className="grid gap-3 md:grid-cols-3">
                 {AREAS.map((area) => (
                   <label
@@ -140,14 +180,23 @@ export default async function NewDiagnosticPage({ searchParams }: NewDiagnosticP
                   <input type="checkbox" name="validationMode" defaultChecked />
                   Validacion cruzada
                 </label>
+                <p className="text-xs leading-5 text-slate-500">
+                  Usa varias IAs en paralelo para contrastar respuestas y aumentar confiabilidad.
+                </p>
                 <label className="flex items-center gap-2 text-sm text-slate-300">
                   <input type="checkbox" name="turboMode" />
                   Modo turbo
                 </label>
+                <p className="text-xs leading-5 text-slate-500">
+                  Recomendado para analisis preliminar cuando la prioridad es velocidad.
+                </p>
                 <label className="flex items-center gap-2 text-sm text-slate-300">
                   <input type="checkbox" name="webResearch" />
                   Busqueda web
                 </label>
+                <p className="text-xs leading-5 text-slate-500">
+                  Enriquecer con fuentes externas recientes segun la tarea y el nivel de profundidad requerido.
+                </p>
               </div>
               <label className="grid gap-2 text-sm text-slate-300">
                 <span>Nivel de detalle</span>

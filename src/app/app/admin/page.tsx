@@ -1,6 +1,16 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import {
+  PREMIUM_PLAN_POLICIES,
+  PREMIUM_SOURCE_CATALOG,
+  getCurrentMonthBounds,
+  getPolicyByPlan,
+  getAiProviderConnections,
+  resolveTenantPlan,
+  resolveTenantPlanFromDb,
+} from "@/lib/platform/governance";
+import { updateTenantMembershipPlan } from "../actions";
 
 type RoleCount = {
   role: string;
@@ -92,6 +102,19 @@ export default async function AdminPage() {
       .limit(500),
   ]);
 
+  const monthBounds = getCurrentMonthBounds();
+  const { data: monthUsageDiagnostics } = await supabase
+    .from("diagnostics")
+    .select("tenant_id, web_research")
+    .gte("created_at", monthBounds.startIso)
+    .lt("created_at", monthBounds.endIso)
+    .limit(10000);
+
+  const { data: tenants } = await supabase
+    .from("tenants")
+    .select("id, name, tenant_memberships(plan)")
+    .order("name", { ascending: true });
+
   const typedRevenueEvents = (revenueEvents ?? []) as RevenueEvent[];
   const collectedRevenue = typedRevenueEvents
     .filter((event) => event.status === "collected")
@@ -118,6 +141,39 @@ export default async function AdminPage() {
     .map(([clientId, value]) => ({ clientId, ...value }))
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 6);
+
+  const aiConnections = getAiProviderConnections();
+  const totalPremiumSources = PREMIUM_SOURCE_CATALOG.filter((source) => source.type === "premium").length;
+
+  const usageByTenant = new Map<string, { reports: number; premiumQueries: number }>();
+  for (const row of monthUsageDiagnostics ?? []) {
+    const tenantId = row.tenant_id ?? "unknown";
+    const current = usageByTenant.get(tenantId) ?? { reports: 0, premiumQueries: 0 };
+    current.reports += 1;
+    if (row.web_research) {
+      current.premiumQueries += 1;
+    }
+    usageByTenant.set(tenantId, current);
+  }
+
+  const tenantUsageRows = await Promise.all(
+    Array.from(usageByTenant.entries()).map(async ([tenantId, usage]) => {
+      const plan = tenantId === "unknown" ? "starter" : await resolveTenantPlanFromDb(supabase, tenantId);
+      const policy = getPolicyByPlan(plan);
+      return {
+        tenantId,
+        plan: policy.label,
+        reports: usage.reports,
+        reportLimit: policy.monthlyReportRuns,
+        premiumQueries: usage.premiumQueries,
+        premiumQueryLimit: policy.monthlyPremiumQueries,
+      };
+    })
+  );
+
+  const sortedTenantUsageRows = tenantUsageRows
+    .sort((a, b) => b.reports - a.reports)
+    .slice(0, 10);
 
   return (
     <main className="min-h-screen bg-slate-950 p-6 text-slate-100 md:p-8">
@@ -253,6 +309,150 @@ export default async function AdminPage() {
             </div>
           </section>
         </div>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <section className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
+            <h2 className="text-lg font-semibold">Conectividad IA central (CP)</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              El Super Admin gestiona conectores globales para pruebas iniciales de consultores.
+            </p>
+            <div className="mt-4 space-y-3">
+              {aiConnections.map((provider) => (
+                <div
+                  key={provider.key}
+                  className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-medium text-slate-100">{provider.label}</p>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs uppercase tracking-[0.16em] ${
+                        provider.connected
+                          ? "border border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                          : "border border-amber-500/40 bg-amber-500/10 text-amber-300"
+                      }`}
+                    >
+                      {provider.connected ? "Conectado" : "Pendiente"}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm text-slate-400">{provider.purpose}</p>
+                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">{provider.envKey}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
+            <h2 className="text-lg font-semibold">Politica de cuotas para listas premium</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              Los consultores con membresia no tienen acceso ilimitado; se controla por plan y consumo mensual.
+            </p>
+            <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-sm text-slate-300">
+              Fuentes premium disponibles en catalogo: {totalPremiumSources}
+            </div>
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-800">
+              <div className="grid grid-cols-[0.8fr_0.8fr_1fr_1fr] gap-3 bg-slate-950/90 px-3 py-2 text-xs uppercase tracking-[0.16em] text-slate-500">
+                <span>Plan</span>
+                <span>Reportes</span>
+                <span>Consultas premium</span>
+                <span>Descargas premium</span>
+              </div>
+              <div className="divide-y divide-slate-800">
+                {PREMIUM_PLAN_POLICIES.map((policy) => (
+                  <div key={policy.key} className="grid grid-cols-[0.8fr_0.8fr_1fr_1fr] gap-3 px-3 py-3 text-sm">
+                    <span className="font-medium text-slate-200">{policy.label}</span>
+                    <span className="text-slate-300">{policy.monthlyReportRuns}</span>
+                    <span className="text-slate-300">{policy.monthlyPremiumQueries}</span>
+                    <span className="text-slate-300">{policy.monthlyPremiumDownloads}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              Siguiente paso: persistir plan por tenant y registrar consumo por fuente para enforcement automatico.
+            </p>
+          </section>
+        </div>
+
+        <section className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
+          <h2 className="text-lg font-semibold">Consumo mensual por tenant</h2>
+          <p className="mt-2 text-sm text-slate-400">
+            Vista de uso actual contra limites del plan para auditar membresias SaaS.
+          </p>
+
+          <div className="mt-4 overflow-hidden rounded-2xl border border-slate-800">
+            <div className="grid grid-cols-[1.1fr_0.6fr_1fr_1fr] gap-3 bg-slate-950/90 px-3 py-2 text-xs uppercase tracking-[0.16em] text-slate-500">
+              <span>Tenant</span>
+              <span>Plan</span>
+              <span>Reportes</span>
+              <span>Consultas premium</span>
+            </div>
+            <div className="divide-y divide-slate-800">
+              {sortedTenantUsageRows.length ? (
+                sortedTenantUsageRows.map((row) => (
+                  <div key={row.tenantId} className="grid grid-cols-[1.1fr_0.6fr_1fr_1fr] gap-3 px-3 py-3 text-sm">
+                    <span className="truncate text-slate-300">{row.tenantId}</span>
+                    <span className="text-slate-300">{row.plan}</span>
+                    <span className="text-slate-300">{row.reports} / {row.reportLimit}</span>
+                    <span className="text-slate-300">{row.premiumQueries} / {row.premiumQueryLimit}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="px-3 py-4 text-sm text-slate-400">Sin consumo mensual registrado aun.</div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
+          <h2 className="text-lg font-semibold">Membresias por tenant</h2>
+          <p className="mt-2 text-sm text-slate-400">
+            Ajusta el plan comercial de cada consultor para controlar cupos de reportes y research premium.
+          </p>
+          <div className="mt-4 space-y-3">
+            {tenants?.length ? (
+              tenants.map((tenant) => {
+                const membership = Array.isArray(tenant.tenant_memberships)
+                  ? tenant.tenant_memberships[0]
+                  : tenant.tenant_memberships;
+                const fallbackPlan = resolveTenantPlan(tenant.id);
+                const selectedPlan = membership?.plan ?? fallbackPlan;
+
+                return (
+                  <form key={tenant.id} action={updateTenantMembershipPlan} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                    <input type="hidden" name="tenantId" value={tenant.id} />
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="font-medium text-slate-100">{tenant.name}</p>
+                        <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">{tenant.id}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select
+                          name="plan"
+                          defaultValue={selectedPlan}
+                          className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+                        >
+                          <option value="starter">Starter</option>
+                          <option value="growth">Growth</option>
+                          <option value="scale">Scale</option>
+                        </select>
+                        <button
+                          type="submit"
+                          className="rounded-xl border border-cyan-600/60 bg-cyan-950/30 px-3 py-2 text-sm text-cyan-200 transition hover:bg-cyan-900/30"
+                        >
+                          Guardar plan
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                );
+              })
+            ) : (
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-sm text-slate-400">
+                No hay tenants disponibles para configurar.
+              </div>
+            )}
+          </div>
+        </section>
       </section>
     </main>
   );

@@ -1,3 +1,81 @@
+// --- Consulting Plan Roadmap Actions ---
+export async function addRoadmapDeliverable(formData: FormData) {
+  const { supabase, user, profile } = await getAuthenticatedContext();
+  const rawClientId = formData.get("clientId");
+  const rawPhase = formData.get("phase");
+  const rawDeliverable = formData.get("deliverable");
+
+  const clientId = typeof rawClientId === "string" ? rawClientId : "";
+  const phase = typeof rawPhase === "string" ? rawPhase.trim() : "";
+  const deliverable = typeof rawDeliverable === "string" ? rawDeliverable.trim() : "";
+
+  if (!profile?.tenant_id || !clientId || !phase || !deliverable) {
+    return;
+  }
+
+  await supabase.from("consulting_plan_roadmaps").insert({
+    client_id: clientId,
+    tenant_id: profile.tenant_id,
+    phase,
+    deliverable,
+    is_complete: false,
+    created_at: nowIsoString(),
+    updated_at: nowIsoString(),
+  });
+
+  revalidatePath(`/app/clients/${clientId}/plan`);
+}
+
+export async function updateRoadmapDeliverable(formData: FormData) {
+  const { supabase, profile } = await getAuthenticatedContext();
+  const rawId = formData.get("roadmapId");
+  const rawPhase = formData.get("phase");
+  const rawDeliverable = formData.get("deliverable");
+
+  const id = typeof rawId === "string" ? rawId : "";
+  const phase = typeof rawPhase === "string" ? rawPhase.trim() : "";
+  const deliverable = typeof rawDeliverable === "string" ? rawDeliverable.trim() : "";
+
+  if (!profile?.tenant_id || !id || !phase || !deliverable) {
+    return;
+  }
+
+  await supabase.from("consulting_plan_roadmaps").update({
+    phase,
+    deliverable,
+    updated_at: nowIsoString(),
+  }).eq("id", id);
+  // No tenant_id check here, RLS enforced at DB
+  // Optionally, could revalidate path if clientId is passed
+}
+
+export async function toggleRoadmapDeliverableComplete(formData: FormData) {
+  const { supabase, profile } = await getAuthenticatedContext();
+  const rawId = formData.get("roadmapId");
+  const rawIsComplete = formData.get("isComplete");
+
+  const id = typeof rawId === "string" ? rawId : "";
+  const isComplete = rawIsComplete === "true";
+
+  if (!profile?.tenant_id || !id) {
+    return;
+  }
+
+  await supabase.from("consulting_plan_roadmaps").update({
+    is_complete: isComplete,
+    updated_at: nowIsoString(),
+  }).eq("id", id);
+}
+
+export async function deleteRoadmapDeliverable(formData: FormData) {
+  const { supabase, profile } = await getAuthenticatedContext();
+  const rawId = formData.get("roadmapId");
+  const id = typeof rawId === "string" ? rawId : "";
+  if (!profile?.tenant_id || !id) {
+    return;
+  }
+  await supabase.from("consulting_plan_roadmaps").delete().eq("id", id);
+}
 "use server";
 
 import { randomUUID } from "node:crypto";
@@ -6,8 +84,18 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { getDefaultRouteForRole } from "@/lib/auth/profile";
+import { getCurrentMonthBounds, getPolicyByPlan, resolveTenantPlanFromDb } from "@/lib/platform/governance";
 
 const VALID_CLIENT_STATUSES = new Set(["prospect", "active", "retainer", "inactive"]);
+const EMPLOYEE_RANGE_OPTIONS = new Set(["1-49", "50-199", "200-500", "500-999", "1000-2000", "2000+"]);
+const ANNUAL_REVENUE_RANGE_OPTIONS = new Set([
+  "<$10M",
+  "$10M-$50M",
+  "$50M-$250M",
+  "$250M-$500M",
+  "$500M-$1000M",
+  "$1000M+",
+]);
 const DOCUMENT_BUCKET = "client-documents";
 
 function sanitizeFileName(fileName: string) {
@@ -75,6 +163,8 @@ export async function createClientRecord(formData: FormData) {
   const rawName = formData.get("name");
   const rawIndustry = formData.get("industry");
   const rawCompanySize = formData.get("companySize");
+  const rawEmployeeRange = formData.get("employeeRange");
+  const rawAnnualRevenueRange = formData.get("annualRevenueRange");
   const rawPrimaryContactName = formData.get("primaryContactName");
   const rawPrimaryContactEmail = formData.get("primaryContactEmail");
   const rawPrimaryContactPhone = formData.get("primaryContactPhone");
@@ -86,6 +176,14 @@ export async function createClientRecord(formData: FormData) {
   const name = typeof rawName === "string" ? rawName.trim() : "";
   const industry = typeof rawIndustry === "string" ? rawIndustry.trim() : "";
   const companySize = typeof rawCompanySize === "string" ? rawCompanySize.trim() : "";
+  const employeeRange =
+    typeof rawEmployeeRange === "string" && EMPLOYEE_RANGE_OPTIONS.has(rawEmployeeRange)
+      ? rawEmployeeRange
+      : "";
+  const annualRevenueRange =
+    typeof rawAnnualRevenueRange === "string" && ANNUAL_REVENUE_RANGE_OPTIONS.has(rawAnnualRevenueRange)
+      ? rawAnnualRevenueRange
+      : "";
   const primaryContactName =
     typeof rawPrimaryContactName === "string" ? rawPrimaryContactName.trim() : "";
   const primaryContactEmail =
@@ -107,11 +205,17 @@ export async function createClientRecord(formData: FormData) {
     return;
   }
 
+  const normalizedCompanySize = employeeRange || annualRevenueRange
+    ? [employeeRange ? `${employeeRange} empleados` : "", annualRevenueRange ? `${annualRevenueRange} ventas` : ""]
+        .filter(Boolean)
+        .join(" · ")
+    : companySize;
+
   await supabase.from("clients").insert({
     tenant_id: profile.tenant_id,
     name,
     industry: industry || null,
-    company_size: companySize || null,
+    company_size: normalizedCompanySize || null,
     primary_contact_name: primaryContactName || null,
     primary_contact_email: primaryContactEmail || null,
     primary_contact_phone: primaryContactPhone || null,
@@ -159,6 +263,50 @@ export async function saveClientNotes(formData: FormData) {
 
   revalidatePath("/app");
   revalidatePath(`/app/clients/${clientId}`);
+}
+
+export async function saveClientConsultingPlan(formData: FormData) {
+  const { supabase, user, profile } = await getAuthenticatedContext();
+
+  const rawClientId = formData.get("clientId");
+  const rawObjective = formData.get("objective");
+  const rawSuccessMetrics = formData.get("successMetrics");
+  const rawScope = formData.get("scope");
+  const rawKeyRisks = formData.get("keyRisks");
+  const rawNext90Days = formData.get("next90Days");
+  const rawEngagementModel = formData.get("engagementModel");
+  const rawConsultorId = formData.get("consultorId");
+
+  const clientId = typeof rawClientId === "string" ? rawClientId : "";
+  const objective = typeof rawObjective === "string" ? rawObjective.trim() : "";
+  const successMetrics = typeof rawSuccessMetrics === "string" ? rawSuccessMetrics.trim() : "";
+  const scope = typeof rawScope === "string" ? rawScope.trim() : "";
+  const keyRisks = typeof rawKeyRisks === "string" ? rawKeyRisks.trim() : "";
+  const next90Days = typeof rawNext90Days === "string" ? rawNext90Days.trim() : "";
+  const engagementModel = typeof rawEngagementModel === "string" ? rawEngagementModel.trim() : "";
+  const consultorId = typeof rawConsultorId === "string" && rawConsultorId.length > 0 ? rawConsultorId : user.id;
+
+  if (!profile?.tenant_id || !clientId) {
+    return;
+  }
+
+  await supabase.from("client_consulting_plans").upsert({
+    client_id: clientId,
+    tenant_id: profile.tenant_id,
+    objective: objective || null,
+    success_metrics: successMetrics || null,
+    scope: scope || null,
+    key_risks: keyRisks || null,
+    next_90_days: next90Days || null,
+    engagement_model: engagementModel || null,
+    consultor_id: consultorId,
+    updated_by: user.id,
+    updated_at: nowIsoString(),
+  });
+
+  revalidatePath(`/app/clients/${clientId}`);
+  revalidatePath(`/app/clients/${clientId}/plan`);
+  revalidatePath("/app/consulting");
 }
 
 export async function uploadClientDocument(formData: FormData) {
@@ -304,6 +452,8 @@ export async function createDiagnosticRun(formData: FormData) {
   const rawTitle = formData.get("title");
   const rawAnalysisType = formData.get("analysisType");
   const rawFramework = formData.get("framework");
+  const rawCustomFramework = formData.get("customFramework");
+  const rawCustomReportFormat = formData.get("customReportFormat");
   const rawAdditionalContext = formData.get("additionalContext");
   const rawValidationMode = formData.get("validationMode");
   const rawTurboMode = formData.get("turboMode");
@@ -315,8 +465,14 @@ export async function createDiagnosticRun(formData: FormData) {
   const clientId = typeof rawClientId === "string" ? rawClientId : "";
   const title = typeof rawTitle === "string" ? rawTitle.trim() : "";
   const analysisType = typeof rawAnalysisType === "string" ? rawAnalysisType.trim() : "";
-  const framework = typeof rawFramework === "string" ? rawFramework.trim() : "";
-  const additionalContext = typeof rawAdditionalContext === "string" ? rawAdditionalContext.trim() : "";
+  const selectedFramework = typeof rawFramework === "string" ? rawFramework.trim() : "";
+  const customFramework = typeof rawCustomFramework === "string" ? rawCustomFramework.trim() : "";
+  const customReportFormat = typeof rawCustomReportFormat === "string" ? rawCustomReportFormat.trim() : "";
+  const framework = selectedFramework === "custom" ? customFramework : selectedFramework;
+  const additionalContextBase = typeof rawAdditionalContext === "string" ? rawAdditionalContext.trim() : "";
+  const additionalContext = customReportFormat
+    ? [additionalContextBase, `Formato de reporte solicitado: ${customReportFormat}`].filter(Boolean).join("\n\n")
+    : additionalContextBase;
   const validationMode = rawValidationMode === "on";
   const turboMode = rawTurboMode === "on";
   const webResearch = rawWebResearch === "on";
@@ -326,7 +482,42 @@ export async function createDiagnosticRun(formData: FormData) {
     : 3;
 
   if (!profile?.tenant_id || !clientId || !title || !framework) {
-    return;
+    const params = new URLSearchParams({
+      clientId,
+      error: "missing_fields",
+    });
+    redirect(`/app/diagnostics/new?${params.toString()}`);
+  }
+
+  const tenantPlan = await resolveTenantPlanFromDb(supabase, profile.tenant_id);
+  const planPolicy = getPolicyByPlan(tenantPlan);
+  const monthBounds = getCurrentMonthBounds();
+
+  const { data: monthDiagnostics } = await supabase
+    .from("diagnostics")
+    .select("id, web_research")
+    .eq("tenant_id", profile.tenant_id)
+    .gte("created_at", monthBounds.startIso)
+    .lt("created_at", monthBounds.endIso);
+
+  const diagnosticsCount = monthDiagnostics?.length ?? 0;
+  const premiumResearchCount =
+    monthDiagnostics?.filter((diagnostic) => Boolean(diagnostic.web_research)).length ?? 0;
+
+  if (diagnosticsCount >= planPolicy.monthlyReportRuns) {
+    const params = new URLSearchParams({
+      clientId,
+      error: "quota_reports",
+    });
+    redirect(`/app/diagnostics/new?${params.toString()}`);
+  }
+
+  if (webResearch && premiumResearchCount >= planPolicy.monthlyPremiumQueries) {
+    const params = new URLSearchParams({
+      clientId,
+      error: "quota_research",
+    });
+    redirect(`/app/diagnostics/new?${params.toString()}`);
   }
 
   const { data: diagnostic } = await supabase
@@ -350,7 +541,11 @@ export async function createDiagnosticRun(formData: FormData) {
     .single();
 
   if (!diagnostic?.id) {
-    return;
+    const params = new URLSearchParams({
+      clientId,
+      error: "create_failed",
+    });
+    redirect(`/app/diagnostics/new?${params.toString()}`);
   }
 
   if (selectedDocumentIds.length) {
@@ -605,6 +800,7 @@ export async function createRetainerSession(formData: FormData) {
 
 const REVENUE_STREAMS = new Set(["diagnostico", "retainer", "implementacion", "licencia", "success_fee", "otro"]);
 const REVENUE_STATUSES = new Set(["projected", "invoiced", "collected", "cancelled"]);
+const MEMBERSHIP_PLANS = new Set(["starter", "growth", "scale"]);
 
 export async function createRevenueEvent(formData: FormData) {
   const { supabase, user, profile } = await getAuthenticatedContext();
@@ -667,6 +863,39 @@ export async function updateRevenueEventStatus(formData: FormData) {
     .eq("id", revenueId);
 
   revalidatePath(`/app/clients/${clientId}/revenue`);
+  revalidatePath("/app/admin");
+  revalidatePath("/admin");
+}
+
+export async function updateTenantMembershipPlan(formData: FormData) {
+  const { supabase, user } = await getAuthenticatedContext();
+  const rawTenantId = formData.get("tenantId");
+  const rawPlan = formData.get("plan");
+
+  const tenantId = typeof rawTenantId === "string" ? rawTenantId : "";
+  const plan = typeof rawPlan === "string" && MEMBERSHIP_PLANS.has(rawPlan) ? rawPlan : "";
+
+  if (!tenantId || !plan) {
+    return;
+  }
+
+  const { data: actorProfile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("user_id", user.id)
+    .single();
+
+  if (actorProfile?.role !== "super_admin") {
+    return;
+  }
+
+  await supabase.from("tenant_memberships").upsert({
+    tenant_id: tenantId,
+    plan,
+    updated_by: user.id,
+    updated_at: nowIsoString(),
+  });
+
   revalidatePath("/app/admin");
   revalidatePath("/admin");
 }
