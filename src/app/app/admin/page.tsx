@@ -158,7 +158,7 @@ export default async function AdminPage() {
 
   const tenantUsageRows = await Promise.all(
     Array.from(usageByTenant.entries()).map(async ([tenantId, usage]) => {
-      const plan = tenantId === "unknown" ? "starter" : await resolveTenantPlanFromDb(supabase, tenantId);
+      const plan = tenantId === "unknown" ? "starter" : await resolveTenantPlanFromDb(supabase as any, tenantId);
       const policy = getPolicyByPlan(plan);
       return {
         tenantId,

@@ -24,7 +24,7 @@ export default async function SettingsPage() {
     .single();
 
   const aiConnections = getAiProviderConnections();
-  const tenantPlan = profile?.tenant_id ? await resolveTenantPlanFromDb(supabase, profile.tenant_id) : "starter";
+  const tenantPlan = profile?.tenant_id ? await resolveTenantPlanFromDb(supabase as any, profile.tenant_id) : "starter";
   const activePolicy = getPolicyByPlan(tenantPlan);
   const monthBounds = getCurrentMonthBounds();
 

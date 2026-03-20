@@ -489,7 +489,7 @@ export async function createDiagnosticRun(formData: FormData) {
     redirect(`/app/diagnostics/new?${params.toString()}`);
   }
 
-  const tenantPlan = await resolveTenantPlanFromDb(supabase, profile.tenant_id);
+  const tenantPlan = await resolveTenantPlanFromDb(supabase as any, profile.tenant_id);
   const planPolicy = getPolicyByPlan(tenantPlan);
   const monthBounds = getCurrentMonthBounds();
 

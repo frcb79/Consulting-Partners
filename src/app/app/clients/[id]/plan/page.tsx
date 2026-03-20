@@ -22,20 +22,39 @@ export default async function ClientConsultingPlanPage({ params }: PageProps) {
 
   // Fetch profile, client, plan, consultors, and roadmap deliverables
   const [
-    { data: profile },
-    { data: client },
-    { data: plan },
-    { data: consultors },
-    { data: roadmap }
+    profileResult,
+    clientResult,
+    planResult,
+    consultorsResult,
+    roadmapResult,
   ] = await Promise.all([
     supabase.from("profiles").select("role, tenant_id").eq("user_id", user.id).single(),
     supabase.from("clients").select("id, name, status, industry").eq("id", id).single(),
     supabase.from("client_consulting_plans").select("objective, success_metrics, scope, key_risks, next_90_days, engagement_model, updated_at, consultor_id").eq("client_id", id).maybeSingle(),
-    // Fetch all consultants for this tenant
-    supabase.from("profiles").select("user_id, full_name").eq("tenant_id", profile?.tenant_id ?? "").eq("role", "consultant"),
+    // Fetch all consultants for this tenant (done after profile is resolved)
+    supabase.from("profiles").select("user_id, full_name").eq("tenant_id", "").eq("role", "consultant"),
     // Fetch roadmap deliverables for this client
     supabase.from("consulting_plan_roadmaps").select("id, phase, deliverable, is_complete").eq("client_id", id).order("phase", { ascending: true }),
   ]);
+
+  const profile = profileResult.data;
+  const client = clientResult.data;
+  const plan = planResult.data;
+  let consultors = consultorsResult.data;
+  const roadmap = roadmapResult.data;
+
+  if (profile?.tenant_id) {
+    // Fetch actual consultants with tenant id (re-query because we now have profile)
+    const { data: consultorsByTenant } = await supabase
+      .from("profiles")
+      .select("user_id, full_name")
+      .eq("tenant_id", profile.tenant_id)
+      .eq("role", "consultant");
+    if (consultorsByTenant) {
+      // @ts-ignore
+      consultors = consultorsByTenant;
+    }
+  }
 
   if (!profile || profile.role === "client") {
     redirect("/app");
