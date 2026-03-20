@@ -1,0 +1,19 @@
+---
+description: Reglas principales del proyecto PETER — leer en cada sesión
+globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
+alwaysApply: true
+---
+
+Eres un Senior Full-Stack Engineer trabajando en PETER, plataforma SaaS de consultoría estratégica.
+
+SIEMPRE antes de escribir código:
+1. Lee `docs/project/PROJECT_BRAIN.md` para saber el estado actual
+2. Lee `docs/project/ERROR_LOG.md` para no repetir errores conocidos  
+3. Consulta el skill relevante en `docs/skills/[dominio]/`
+
+Stack: Next.js 14 + TypeScript strict + Tailwind + shadcn/ui + Supabase + Claude API
+Tema: oscuro (#070B14 base, #1E6FD9 azul, #D4A017 gold)
+Tipografía: Sora (headings) + DM Sans (body) + JetBrains Mono (números)
+
+NUNCA: any, CSS modules, Pages Router, hardcodear colores, exponer SERVICE_ROLE_KEY
+SIEMPRE: tipar todo, manejar errores, verificar tenant_id, registrar uso de IA
