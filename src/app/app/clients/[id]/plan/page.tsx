@@ -1,10 +1,51 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { saveClientConsultingPlan } from "../../../actions";
+import {
+  addRoadmapDeliverable,
+  deleteRoadmapDeliverable,
+  saveClientConsultingPlan,
+  toggleRoadmapDeliverableComplete,
+  updateRoadmapDeliverable,
+} from "../../../actions";
 import { createClient } from "@/lib/supabase/server";
 
 type PageProps = {
   params: Promise<{ id: string }>;
+};
+
+type ProfileRecord = {
+  role: string | null;
+  tenant_id: string | null;
+};
+
+type ClientRecord = {
+  id: string;
+  name: string;
+  status: string;
+  industry: string | null;
+};
+
+type PlanRecord = {
+  objective: string | null;
+  success_metrics: string | null;
+  scope: string | null;
+  key_risks: string | null;
+  next_90_days: string | null;
+  engagement_model: string | null;
+  updated_at: string | null;
+  consultor_id: string | null;
+};
+
+type ConsultantOption = {
+  user_id: string;
+  full_name: string | null;
+};
+
+type RoadmapItem = {
+  id: string;
+  phase: string;
+  deliverable: string;
+  is_complete: boolean;
 };
 
 
@@ -21,27 +62,19 @@ export default async function ClientConsultingPlanPage({ params }: PageProps) {
   }
 
   // Fetch profile, client, plan, consultors, and roadmap deliverables
-  const [
-    profileResult,
-    clientResult,
-    planResult,
-    consultorsResult,
-    roadmapResult,
-  ] = await Promise.all([
+  const [profileResult, clientResult, planResult, roadmapResult] = await Promise.all([
     supabase.from("profiles").select("role, tenant_id").eq("user_id", user.id).single(),
     supabase.from("clients").select("id, name, status, industry").eq("id", id).single(),
     supabase.from("client_consulting_plans").select("objective, success_metrics, scope, key_risks, next_90_days, engagement_model, updated_at, consultor_id").eq("client_id", id).maybeSingle(),
-    // Fetch all consultants for this tenant (done after profile is resolved)
-    supabase.from("profiles").select("user_id, full_name").eq("tenant_id", "").eq("role", "consultant"),
     // Fetch roadmap deliverables for this client
     supabase.from("consulting_plan_roadmaps").select("id, phase, deliverable, is_complete").eq("client_id", id).order("phase", { ascending: true }),
   ]);
 
-  const profile = profileResult.data;
-  const client = clientResult.data;
-  const plan = planResult.data;
-  let consultors = consultorsResult.data;
-  const roadmap = roadmapResult.data;
+  const profile = (profileResult.data ?? null) as ProfileRecord | null;
+  const client = (clientResult.data ?? null) as ClientRecord | null;
+  const plan = (planResult.data ?? null) as PlanRecord | null;
+  let consultors: ConsultantOption[] = [];
+  const roadmap = (roadmapResult.data ?? []) as RoadmapItem[];
 
   if (profile?.tenant_id) {
     // Fetch actual consultants with tenant id (re-query because we now have profile)
@@ -51,10 +84,11 @@ export default async function ClientConsultingPlanPage({ params }: PageProps) {
       .eq("tenant_id", profile.tenant_id)
       .eq("role", "consultant");
     if (consultorsByTenant) {
-      // @ts-ignore
       consultors = consultorsByTenant;
     }
   }
+
+  const roadmapPhases = Array.from(new Set(roadmap.map((roadmapItem) => roadmapItem.phase)));
 
   if (!profile || profile.role === "client") {
     redirect("/app");
@@ -94,7 +128,7 @@ export default async function ClientConsultingPlanPage({ params }: PageProps) {
               defaultValue={plan?.consultor_id ?? user.id}
               className="rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
             >
-              {consultors?.map((c: any) => (
+              {consultors.map((c) => (
                 <option key={c.user_id} value={c.user_id}>
                   {c.full_name || c.user_id}
                 </option>
@@ -184,9 +218,8 @@ export default async function ClientConsultingPlanPage({ params }: PageProps) {
         <section className="mt-10 rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
           <h2 className="text-xl font-semibold mb-4">Roadmap y checklist de entregables</h2>
           {/* Add new deliverable */}
-          <form action="/app/app/actions" method="post" className="mb-6 flex flex-wrap gap-3 items-end">
+          <form action={addRoadmapDeliverable} className="mb-6 flex flex-wrap gap-3 items-end">
             <input type="hidden" name="clientId" value={client.id} />
-            <input type="hidden" name="actionType" value="addRoadmapDeliverable" />
             <div>
               <label className="block text-xs mb-1">Fase</label>
               <input name="phase" required placeholder="Fase (ej. Diagnóstico, Implementación)" className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring" />
@@ -201,30 +234,30 @@ export default async function ClientConsultingPlanPage({ params }: PageProps) {
           {/* List deliverables grouped by phase */}
           {roadmap && roadmap.length > 0 ? (
             <div className="space-y-6">
-              {[...new Set(roadmap.map((r: any) => r.phase))].map((phase) => (
+              {roadmapPhases.map((phase) => (
                 <div key={phase}>
                   <h3 className="text-lg font-bold text-cyan-300 mb-2">Fase: {phase}</h3>
                   <ul className="space-y-2">
-                    {roadmap.filter((r: any) => r.phase === phase).map((item: any) => (
+                    {roadmap.filter((roadmapItem) => roadmapItem.phase === phase).map((item) => (
                       <li key={item.id} className="flex items-center gap-3">
                         {/* Toggle complete */}
-                        <form action="/app/app/actions" method="post" className="flex items-center gap-2">
+                        <form action={toggleRoadmapDeliverableComplete} className="flex items-center gap-2">
                           <input type="hidden" name="roadmapId" value={item.id} />
-                          <input type="hidden" name="actionType" value="toggleRoadmapDeliverableComplete" />
-                          <input type="checkbox" name="isComplete" defaultChecked={item.is_complete} onChange={() => { (event?.target as HTMLFormElement)?.form?.submit(); }} />
+                          <input type="hidden" name="isComplete" value={item.is_complete ? "false" : "true"} />
+                          <button type="submit" className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800">
+                            {item.is_complete ? "Marcar pendiente" : "Marcar completo"}
+                          </button>
                         </form>
                         {/* Edit deliverable */}
-                        <form action="/app/app/actions" method="post" className="flex items-center gap-2">
+                        <form action={updateRoadmapDeliverable} className="flex items-center gap-2">
                           <input type="hidden" name="roadmapId" value={item.id} />
-                          <input type="hidden" name="actionType" value="updateRoadmapDeliverable" />
                           <input name="phase" defaultValue={item.phase} className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs w-28" />
                           <input name="deliverable" defaultValue={item.deliverable} className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs w-64" />
                           <button type="submit" className="text-xs text-cyan-400 hover:underline">Guardar</button>
                         </form>
                         {/* Delete deliverable */}
-                        <form action="/app/app/actions" method="post" className="inline">
+                        <form action={deleteRoadmapDeliverable} className="inline">
                           <input type="hidden" name="roadmapId" value={item.id} />
-                          <input type="hidden" name="actionType" value="deleteRoadmapDeliverable" />
                           <button type="submit" className="text-xs text-red-400 hover:underline ml-2">Eliminar</button>
                         </form>
                         <span className={item.is_complete ? "line-through text-slate-500 ml-2" : "ml-2"}>{item.deliverable}</span>

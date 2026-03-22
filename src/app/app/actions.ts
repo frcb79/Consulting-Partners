@@ -1,81 +1,3 @@
-// --- Consulting Plan Roadmap Actions ---
-export async function addRoadmapDeliverable(formData: FormData) {
-  const { supabase, user, profile } = await getAuthenticatedContext();
-  const rawClientId = formData.get("clientId");
-  const rawPhase = formData.get("phase");
-  const rawDeliverable = formData.get("deliverable");
-
-  const clientId = typeof rawClientId === "string" ? rawClientId : "";
-  const phase = typeof rawPhase === "string" ? rawPhase.trim() : "";
-  const deliverable = typeof rawDeliverable === "string" ? rawDeliverable.trim() : "";
-
-  if (!profile?.tenant_id || !clientId || !phase || !deliverable) {
-    return;
-  }
-
-  await supabase.from("consulting_plan_roadmaps").insert({
-    client_id: clientId,
-    tenant_id: profile.tenant_id,
-    phase,
-    deliverable,
-    is_complete: false,
-    created_at: nowIsoString(),
-    updated_at: nowIsoString(),
-  });
-
-  revalidatePath(`/app/clients/${clientId}/plan`);
-}
-
-export async function updateRoadmapDeliverable(formData: FormData) {
-  const { supabase, profile } = await getAuthenticatedContext();
-  const rawId = formData.get("roadmapId");
-  const rawPhase = formData.get("phase");
-  const rawDeliverable = formData.get("deliverable");
-
-  const id = typeof rawId === "string" ? rawId : "";
-  const phase = typeof rawPhase === "string" ? rawPhase.trim() : "";
-  const deliverable = typeof rawDeliverable === "string" ? rawDeliverable.trim() : "";
-
-  if (!profile?.tenant_id || !id || !phase || !deliverable) {
-    return;
-  }
-
-  await supabase.from("consulting_plan_roadmaps").update({
-    phase,
-    deliverable,
-    updated_at: nowIsoString(),
-  }).eq("id", id);
-  // No tenant_id check here, RLS enforced at DB
-  // Optionally, could revalidate path if clientId is passed
-}
-
-export async function toggleRoadmapDeliverableComplete(formData: FormData) {
-  const { supabase, profile } = await getAuthenticatedContext();
-  const rawId = formData.get("roadmapId");
-  const rawIsComplete = formData.get("isComplete");
-
-  const id = typeof rawId === "string" ? rawId : "";
-  const isComplete = rawIsComplete === "true";
-
-  if (!profile?.tenant_id || !id) {
-    return;
-  }
-
-  await supabase.from("consulting_plan_roadmaps").update({
-    is_complete: isComplete,
-    updated_at: nowIsoString(),
-  }).eq("id", id);
-}
-
-export async function deleteRoadmapDeliverable(formData: FormData) {
-  const { supabase, profile } = await getAuthenticatedContext();
-  const rawId = formData.get("roadmapId");
-  const id = typeof rawId === "string" ? rawId : "";
-  if (!profile?.tenant_id || !id) {
-    return;
-  }
-  await supabase.from("consulting_plan_roadmaps").delete().eq("id", id);
-}
 "use server";
 
 import { randomUUID } from "node:crypto";
@@ -155,6 +77,89 @@ async function getAuthenticatedContext() {
     .single();
 
   return { supabase, user, profile };
+}
+
+// --- Consulting Plan Roadmap Actions ---
+export async function addRoadmapDeliverable(formData: FormData) {
+  const { supabase, profile } = await getAuthenticatedContext();
+  const rawClientId = formData.get("clientId");
+  const rawPhase = formData.get("phase");
+  const rawDeliverable = formData.get("deliverable");
+
+  const clientId = typeof rawClientId === "string" ? rawClientId : "";
+  const phase = typeof rawPhase === "string" ? rawPhase.trim() : "";
+  const deliverable = typeof rawDeliverable === "string" ? rawDeliverable.trim() : "";
+
+  if (!profile?.tenant_id || !clientId || !phase || !deliverable) {
+    return;
+  }
+
+  await supabase.from("consulting_plan_roadmaps").insert({
+    client_id: clientId,
+    tenant_id: profile.tenant_id,
+    phase,
+    deliverable,
+    is_complete: false,
+    created_at: nowIsoString(),
+    updated_at: nowIsoString(),
+  });
+
+  revalidatePath(`/app/clients/${clientId}/plan`);
+}
+
+export async function updateRoadmapDeliverable(formData: FormData) {
+  const { supabase, profile } = await getAuthenticatedContext();
+  const rawId = formData.get("roadmapId");
+  const rawPhase = formData.get("phase");
+  const rawDeliverable = formData.get("deliverable");
+
+  const id = typeof rawId === "string" ? rawId : "";
+  const phase = typeof rawPhase === "string" ? rawPhase.trim() : "";
+  const deliverable = typeof rawDeliverable === "string" ? rawDeliverable.trim() : "";
+
+  if (!profile?.tenant_id || !id || !phase || !deliverable) {
+    return;
+  }
+
+  await supabase
+    .from("consulting_plan_roadmaps")
+    .update({
+      phase,
+      deliverable,
+      updated_at: nowIsoString(),
+    })
+    .eq("id", id);
+}
+
+export async function toggleRoadmapDeliverableComplete(formData: FormData) {
+  const { supabase, profile } = await getAuthenticatedContext();
+  const rawId = formData.get("roadmapId");
+  const rawIsComplete = formData.get("isComplete");
+
+  const id = typeof rawId === "string" ? rawId : "";
+  const isComplete = rawIsComplete === "true";
+
+  if (!profile?.tenant_id || !id) {
+    return;
+  }
+
+  await supabase
+    .from("consulting_plan_roadmaps")
+    .update({
+      is_complete: isComplete,
+      updated_at: nowIsoString(),
+    })
+    .eq("id", id);
+}
+
+export async function deleteRoadmapDeliverable(formData: FormData) {
+  const { supabase, profile } = await getAuthenticatedContext();
+  const rawId = formData.get("roadmapId");
+  const id = typeof rawId === "string" ? rawId : "";
+  if (!profile?.tenant_id || !id) {
+    return;
+  }
+  await supabase.from("consulting_plan_roadmaps").delete().eq("id", id);
 }
 
 export async function createClientRecord(formData: FormData) {
@@ -489,7 +494,10 @@ export async function createDiagnosticRun(formData: FormData) {
     redirect(`/app/diagnostics/new?${params.toString()}`);
   }
 
-  const tenantPlan = await resolveTenantPlanFromDb(supabase as any, profile.tenant_id);
+  const tenantPlan = await resolveTenantPlanFromDb(
+    supabase as unknown as Parameters<typeof resolveTenantPlanFromDb>[0],
+    profile.tenant_id
+  );
   const planPolicy = getPolicyByPlan(tenantPlan);
   const monthBounds = getCurrentMonthBounds();
 
