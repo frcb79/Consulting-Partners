@@ -1,32 +1,61 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createClientRecord, signOut } from "./actions";
+import { signOut } from "./actions";
 import { createClient } from "@/lib/supabase/server";
+import { StatCard } from "@/components/ui/stat-card";
+import { AlertWidget } from "@/components/ui/alert-widget";
+import { Badge } from "@/components/ui/badge";
+import {
+  Users,
+  TrendingUp,
+  Stethoscope,
+  CheckCircle,
+  AlertTriangle,
+  ArrowRight,
+  Calendar,
+  Plus,
+} from "@/components/ui/icons";
 
-const STATUS_LABELS: Record<string, string> = {
-  prospect: "Prospecto",
-  active: "Activo",
-  retainer: "En retainer",
-  inactive: "Inactivo",
+const STATUS_CONFIG: Record<
+  string,
+  { label: string; variant: "success" | "warning" | "accent" | "muted" | "info" }
+> = {
+  prospect: { label: "Prospecto", variant: "warning" },
+  active: { label: "Activo", variant: "success" },
+  retainer: { label: "En retainer", variant: "accent" },
+  inactive: { label: "Inactivo", variant: "muted" },
 };
 
-type AppPageProps = {
-  searchParams?: Promise<{
-    q?: string;
-  }>;
+function formatRelative(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - date.getTime()) / 86_400_000);
+  if (diffDays === 0) return "hoy";
+  if (diffDays === 1) return "ayer";
+  if (diffDays < 7) return `hace ${diffDays} dias`;
+  if (diffDays < 30) return `hace ${Math.floor(diffDays / 7)} sem.`;
+  return `hace ${Math.floor(diffDays / 30)} mes.`;
+}
+
+type AlertLevel = "critical" | "warning" | "info" | "success";
+
+type DashboardAlert = {
+  id: string;
+  level: AlertLevel;
+  title: string;
+  description: string;
+  clientName?: string;
+  timestamp: string;
+  href: string;
 };
 
-export default async function AppPage({ searchParams }: AppPageProps) {
-  const resolvedSearchParams = searchParams ? await searchParams : undefined;
-  const searchQuery = resolvedSearchParams?.q?.trim() ?? "";
+export default async function AppPage() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/login");
-  }
+  if (!user) redirect("/login");
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -36,296 +65,257 @@ export default async function AppPage({ searchParams }: AppPageProps) {
 
   if (!profile?.tenant_id) {
     return (
-      <main className="min-h-screen bg-slate-950 p-8 text-slate-100">
-        <section className="mx-auto w-full max-w-3xl rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-          <h1 className="text-2xl font-semibold">Perfil no inicializado</h1>
-          <p className="mt-2 text-slate-300">
-            No se encontro un tenant para este usuario. Cierra sesion y vuelve a entrar para reintentar.
+      <main className="p-8">
+        <div className="mx-auto max-w-lg rounded-2xl border border-status-warning/30 bg-status-warning/5 p-6">
+          <h1 className="font-sora text-xl font-bold text-foreground">Perfil no inicializado</h1>
+          <p className="mt-2 text-sm text-foreground/60">
+            No se encontro un tenant para este usuario. Cierra sesion y vuelve a entrar.
           </p>
-          <form action={signOut} className="mt-6">
+          <form action={signOut} className="mt-5">
             <button
               type="submit"
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm transition hover:bg-slate-800"
+              className="rounded-lg border border-border px-4 py-2 text-sm text-foreground/70 transition hover:bg-surface-strong"
             >
               Cerrar sesion
             </button>
           </form>
-        </section>
+        </div>
       </main>
     );
   }
 
-  const { data: clientStats } = await supabase
-    .from("clients")
-    .select("id, status");
+  const [
+    { data: allClients },
+    { data: recentClients },
+    { data: diagnosticsQC },
+    { data: activeRetainers },
+    { data: upcomingSessions },
+  ] = await Promise.all([
+    supabase.from("clients").select("id, status"),
+    supabase
+      .from("clients")
+      .select("id, name, industry, status, updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(8),
+    supabase
+      .from("diagnostics")
+      .select("id, client_id, status, updated_at, clients(name)")
+      .eq("status", "qc")
+      .order("updated_at", { ascending: true })
+      .limit(5),
+    supabase.from("retainers").select("id, status").eq("status", "active").limit(10),
+    supabase
+      .from("retainer_sessions")
+      .select("id, session_date, title, client_id, clients(name)")
+      .gte("session_date", new Date().toISOString())
+      .order("session_date", { ascending: true })
+      .limit(3),
+  ]);
 
-  let clientsQuery = supabase
-    .from("clients")
-    .select(
-      "id, name, industry, company_size, status, primary_contact_name, primary_contact_email, created_at"
-    )
-    .order("created_at", { ascending: false })
-    .limit(25);
+  const totalClients = allClients?.length ?? 0;
+  const prospectCount = allClients?.filter((c) => c.status === "prospect").length ?? 0;
+  const activeCount = allClients?.filter((c) => c.status === "active").length ?? 0;
+  const retainerCount = allClients?.filter((c) => c.status === "retainer").length ?? 0;
+  const qcCount = diagnosticsQC?.length ?? 0;
+  const retainerActive = activeRetainers?.length ?? 0;
 
-  if (searchQuery) {
-    clientsQuery = clientsQuery.or(
-      `name.ilike.%${searchQuery}%,industry.ilike.%${searchQuery}%,primary_contact_name.ilike.%${searchQuery}%`
-    );
+  const alerts: DashboardAlert[] = [];
+
+  if (qcCount > 0) {
+    const firstQC = diagnosticsQC?.[0];
+    if (firstQC) {
+      const client = Array.isArray(firstQC.clients) ? firstQC.clients[0] : firstQC.clients;
+      alerts.push({
+        id: "qc",
+        level: "critical",
+        title: `${qcCount} diagnostico${qcCount > 1 ? "s" : ""} esperando QC`,
+        description: "Hallazgos IA listos para validacion.",
+        clientName: client?.name ?? "Cliente",
+        timestamp: formatRelative(String(firstQC.updated_at)),
+        href: `/app/diagnostics/${firstQC.id}`,
+      });
+    }
   }
 
-  const { data: clients } = await clientsQuery;
+  if (upcomingSessions && upcomingSessions.length > 0) {
+    const nextSession = upcomingSessions[0];
+    const client = Array.isArray(nextSession.clients) ? nextSession.clients[0] : nextSession.clients;
+    const sessionDate = new Date(String(nextSession.session_date));
+    const daysUntil = Math.max(0, Math.ceil((sessionDate.getTime() - Date.now()) / 86_400_000));
 
-  const totalClients = clientStats?.length ?? 0;
-  const prospectCount = clientStats?.filter((client) => client.status === "prospect").length ?? 0;
-  const activeCount = clientStats?.filter((client) => client.status === "active").length ?? 0;
-  const retainerCount = clientStats?.filter((client) => client.status === "retainer").length ?? 0;
+    alerts.push({
+      id: "session",
+      level: daysUntil <= 2 ? "warning" : "info",
+      title: (nextSession.title as string) ?? "Sesion proxima",
+      description: `En ${daysUntil} dia${daysUntil !== 1 ? "s" : ""}.`,
+      clientName: client?.name ?? "Cliente",
+      timestamp: sessionDate.toLocaleDateString("es-MX", { weekday: "long", month: "short", day: "numeric" }),
+      href: `/app/clients/${nextSession.client_id}`,
+    });
+  }
+
+  if (prospectCount > 2) {
+    alerts.push({
+      id: "prospects",
+      level: "info",
+      title: `${prospectCount} prospectos sin convertir`,
+      description: "Revisa el pipeline para acelerar conversion.",
+      timestamp: "pipeline",
+      href: "/app/clients",
+    });
+  }
+
+  if (alerts.length === 0) {
+    alerts.push({
+      id: "ok",
+      level: "success",
+      title: "Todo al dia",
+      description: "No hay acciones urgentes.",
+      timestamp: "ahora",
+      href: "/app/clients",
+    });
+  }
+
+  const firstName = user.email?.split("@")[0] ?? "Consultor";
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Buenos dias" : hour < 18 ? "Buenas tardes" : "Buenas noches";
 
   return (
-    <main className="min-h-screen bg-slate-950 p-6 text-slate-100 md:p-8">
-      <section className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-sm uppercase tracking-[0.24em] text-cyan-400">Consulting Partners</p>
-              <h1 className="mt-3 text-3xl font-semibold">Workspace privado</h1>
-              <p className="mt-2 text-slate-300">Sesion activa para: {user.email}</p>
-              <p className="mt-1 text-sm text-slate-400">Rol: {profile.role}</p>
-              {profile.role === "super_admin" ? (
-                <Link
-                  href="/app/admin"
-                  className="mt-3 inline-flex rounded-lg border border-cyan-700/60 bg-cyan-950/30 px-3 py-1.5 text-xs uppercase tracking-[0.18em] text-cyan-300 transition hover:bg-cyan-900/30"
-                >
-                  Abrir panel Super Admin
-                </Link>
-              ) : null}
-            </div>
-
-            <form action={signOut}>
-              <button
-                type="submit"
-                className="rounded-lg border border-slate-700 px-4 py-2 text-sm transition hover:bg-slate-800"
-              >
-                Cerrar sesion
-              </button>
-            </form>
+    <main className="min-h-screen p-6 md:p-8">
+      <div className="mx-auto flex max-w-6xl flex-col gap-8">
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-accent">
+              {greeting}, {firstName}
+            </p>
+            <h1 className="mt-1 font-sora text-3xl font-bold text-foreground">Dashboard</h1>
+            <p className="mt-1 text-sm text-foreground/50">
+              {new Date().toLocaleDateString("es-MX", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
+            </p>
           </div>
+          <Link
+            href="/app/clients"
+            className="inline-flex items-center gap-2 rounded-xl border border-accent/30 bg-accent/10 px-4 py-2.5 text-sm font-semibold text-accent transition-all hover:bg-accent/15 hover:shadow-accent-glow"
+          >
+            <Plus className="h-4 w-4" />
+            Nuevo cliente
+          </Link>
+        </header>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-4">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Clientes totales</p>
-              <p className="mt-3 text-3xl font-semibold">{totalClients}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Prospects</p>
-              <p className="mt-3 text-3xl font-semibold text-amber-300">{prospectCount}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Activos</p>
-              <p className="mt-3 text-3xl font-semibold text-emerald-300">{activeCount}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Retainers</p>
-              <p className="mt-3 text-3xl font-semibold text-cyan-300">{retainerCount}</p>
-            </div>
-          </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <StatCard title="Clientes totales" value={totalClients} icon={<Users className="h-7 w-7" />} accentColor="info" delay={0} />
+          <StatCard
+            title="Activos"
+            value={activeCount}
+            icon={<TrendingUp className="h-7 w-7" />}
+            accentColor="success"
+            subtext={totalClients > 0 ? `${Math.round((activeCount / totalClients) * 100)}% del portafolio` : undefined}
+            delay={60}
+          />
+          <StatCard title="En retainer" value={retainerCount} icon={<CheckCircle className="h-7 w-7" />} accentColor="accent" delay={120} />
+          <StatCard title="Prospectos" value={prospectCount} icon={<AlertTriangle className="h-7 w-7" />} accentColor="warning" delay={180} />
+          <StatCard
+            title="Diagnosticos en QC"
+            value={qcCount}
+            icon={<Stethoscope className="h-7 w-7" />}
+            accentColor={qcCount > 0 ? "error" : "success"}
+            subtext={qcCount > 0 ? "Requieren validacion" : "Al dia"}
+            delay={240}
+          />
+          <StatCard title="Retainers activos" value={retainerActive} icon={<Calendar className="h-7 w-7" />} accentColor="success" delay={300} />
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[1.15fr_0.95fr]">
-          <section className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">Clientes</h2>
-                <p className="mt-1 text-sm text-slate-400">
-                  Lista operativa con busqueda y acceso al expediente.
-                </p>
-              </div>
+        <div className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
+          <section className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-sora text-lg font-semibold text-foreground">Atencion requerida</h2>
+              {alerts.length > 1 && (
+                <span className="rounded-full bg-status-error/15 px-2.5 py-0.5 text-xs font-bold text-status-error">
+                  {alerts.filter((a) => a.level === "critical" || a.level === "warning").length}
+                </span>
+              )}
+            </div>
+            <div className="space-y-3">
+              {alerts.map((alert) => (
+                <Link key={alert.id} href={alert.href} className="block">
+                  <AlertWidget
+                    level={alert.level}
+                    title={alert.title}
+                    description={alert.description}
+                    clientName={alert.clientName}
+                    timestamp={alert.timestamp}
+                  />
+                </Link>
+              ))}
+            </div>
+          </section>
 
-              <form className="flex w-full max-w-md gap-2">
-                <input
-                  type="search"
-                  name="q"
-                  defaultValue={searchQuery}
-                  placeholder="Buscar por cliente, industria o contacto"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
-                />
-                <button
-                  type="submit"
-                  className="rounded-xl border border-slate-700 px-4 py-2 text-sm transition hover:bg-slate-800"
-                >
-                  Buscar
-                </button>
-              </form>
+          <section className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-sora text-lg font-semibold text-foreground">Clientes recientes</h2>
+              <Link href="/app/clients" className="flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
+                Ver todos <ArrowRight className="h-3 w-3" />
+              </Link>
             </div>
 
-            <div className="mt-6 overflow-hidden rounded-2xl border border-slate-800">
-              <div className="grid grid-cols-[1.2fr_0.95fr_0.8fr_1fr] gap-3 bg-slate-950/90 px-4 py-3 text-xs uppercase tracking-[0.18em] text-slate-500">
-                <span>Cliente</span>
-                <span>Industria</span>
-                <span>Estado</span>
-                <span>Contacto</span>
+            <div className="overflow-hidden rounded-xl border border-border bg-surface">
+              <div className="grid grid-cols-[1.5fr_1fr_auto] gap-4 border-b border-border bg-surface-strong px-4 py-3">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-foreground/40">Cliente</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-foreground/40">Industria</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-foreground/40">Estado</span>
               </div>
-              <div className="divide-y divide-slate-800">
-                {clients?.length ? (
-                  clients.map((client) => (
-                    <Link
-                      key={client.id}
-                      href={`/app/clients/${client.id}`}
-                      className="grid grid-cols-[1.2fr_0.95fr_0.8fr_1fr] gap-3 px-4 py-4 text-sm transition hover:bg-slate-950/60"
-                    >
-                      <div>
-                        <p className="font-medium text-slate-100">{client.name}</p>
-                        <p className="mt-1 text-xs text-slate-500">{client.company_size ?? "Tamano sin definir"}</p>
-                      </div>
-                      <p className="text-slate-300">{client.industry ?? "Sin industria"}</p>
-                      <p className="text-slate-300">{STATUS_LABELS[client.status] ?? client.status}</p>
-                      <div className="text-slate-300">
-                        <p>{client.primary_contact_name ?? "Sin contacto"}</p>
-                        <p className="mt-1 text-xs text-slate-500">{client.primary_contact_email ?? "Sin email"}</p>
-                      </div>
-                    </Link>
-                  ))
+
+              <div className="divide-y divide-border">
+                {recentClients?.length ? (
+                  recentClients.map((client) => {
+                    const statusCfg = STATUS_CONFIG[client.status] ?? {
+                      label: String(client.status ?? "Sin estado"),
+                      variant: "muted" as const,
+                    };
+
+                    return (
+                      <Link
+                        key={client.id}
+                        href={`/app/clients/${client.id}`}
+                        className="group grid grid-cols-[1.5fr_1fr_auto] items-center gap-4 px-4 py-3.5 transition hover:bg-surface-strong"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-foreground transition-colors group-hover:text-accent">
+                            {client.name}
+                          </p>
+                          <p className="mt-0.5 text-xs text-foreground/40">{formatRelative(String(client.updated_at))}</p>
+                        </div>
+                        <p className="truncate text-xs text-foreground/60">{client.industry ?? "-"}</p>
+                        <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
+                      </Link>
+                    );
+                  })
                 ) : (
-                  <div className="px-4 py-6 text-sm text-slate-400">
-                    No hay clientes para el filtro actual.
+                  <div className="flex flex-col items-center gap-3 py-10 text-center">
+                    <Users className="h-8 w-8 text-foreground/20" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground/60">Sin clientes aun</p>
+                      <p className="mt-1 text-xs text-foreground/40">Agrega tu primer cliente para comenzar.</p>
+                    </div>
+                    <Link
+                      href="/app/clients"
+                      className="mt-1 flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/15"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Agregar cliente
+                    </Link>
                   </div>
                 )}
               </div>
             </div>
           </section>
-
-          <section className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
-            <h2 className="text-xl font-semibold">Alta de cliente</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Formulario largo alineado al expediente de V1.
-            </p>
-
-            <form action={createClientRecord} className="mt-6 grid gap-6">
-              <div className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Info de empresa
-                </h3>
-                <input
-                  name="name"
-                  required
-                  placeholder="Nombre del cliente"
-                  className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
-                />
-                <div className="grid gap-3 md:grid-cols-2">
-                  <input
-                    name="industry"
-                    placeholder="Industria"
-                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
-                  />
-                  <select
-                    name="employeeRange"
-                    defaultValue=""
-                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
-                  >
-                    <option value="">Rango de empleados</option>
-                    <option value="1-49">1-49</option>
-                    <option value="50-199">50-199</option>
-                    <option value="200-500">200-500</option>
-                    <option value="500-999">500-999</option>
-                    <option value="1000-2000">1000-2000</option>
-                    <option value="2000+">2000+</option>
-                  </select>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <select
-                    name="annualRevenueRange"
-                    defaultValue=""
-                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
-                  >
-                    <option value="">Ventas anuales (MXN)</option>
-                    <option value="&lt;$10M">Menor a $10M</option>
-                    <option value="$10M-$50M">$10M-$50M</option>
-                    <option value="$50M-$250M">$50M-$250M</option>
-                    <option value="$250M-$500M">$250M-$500M</option>
-                    <option value="$500M-$1000M">$500M-$1000M</option>
-                    <option value="$1000M+">Mayor a $1000M</option>
-                  </select>
-                  <input
-                    name="companySize"
-                    placeholder="Tamano legacy (opcional)"
-                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
-                  />
-                </div>
-                <select
-                  name="status"
-                  defaultValue="prospect"
-                  className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
-                >
-                  <option value="prospect">Prospecto</option>
-                  <option value="active">Activo</option>
-                  <option value="retainer">En retainer</option>
-                  <option value="inactive">Inactivo</option>
-                </select>
-              </div>
-
-              <div className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Contacto principal
-                </h3>
-                <input
-                  name="primaryContactName"
-                  placeholder="Nombre del contacto"
-                  className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
-                />
-                <div className="grid gap-3 md:grid-cols-2">
-                  <input
-                    type="email"
-                    name="primaryContactEmail"
-                    placeholder="Email del contacto"
-                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
-                  />
-                  <input
-                    name="primaryContactPhone"
-                    placeholder="Telefono del contacto"
-                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Contexto estrategico
-                </h3>
-                <textarea
-                  name="strategicContext"
-                  rows={5}
-                  placeholder="Reto principal, contexto y situacion actual"
-                  className="rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
-                />
-              </div>
-
-              <div className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Comercial e internas
-                </h3>
-                <textarea
-                  name="commercialContext"
-                  rows={4}
-                  placeholder="Alcance comercial, propuesta o contexto de venta"
-                  className="rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
-                />
-                <textarea
-                  name="internalNotes"
-                  rows={4}
-                  placeholder="Notas internas solo para el consultor"
-                  className="rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-400 focus:ring"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-fit rounded-xl bg-cyan-500 px-5 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-cyan-400"
-              >
-                Guardar cliente
-              </button>
-            </form>
-          </section>
         </div>
-      </section>
+      </div>
     </main>
   );
 }

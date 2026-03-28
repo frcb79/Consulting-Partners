@@ -1,30 +1,23 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { signOut } from "./actions";
 import { createClient } from "@/lib/supabase/server";
 import { ThemeSwitcher } from "@/components/app/ThemeSwitcher";
+import { NavSection } from "@/components/ui/nav-section";
+import {
+  LayoutDashboard,
+  Users,
+  Stethoscope,
+  BookOpen,
+  TrendingUp,
+  Settings,
+  Shield,
+  Sparkles,
+  LogOut,
+} from "@/components/ui/icons";
 
 type AppLayoutProps = {
   children: React.ReactNode;
 };
-
-const MAIN_NAV = [
-  { href: "/app", label: "Dashboard" },
-  { href: "/app/consulting", label: "Centro de consultoria" },
-  { href: "/app/diagnostics/new", label: "Diagnosticos" },
-];
-
-const OPERATIONS_NAV = [
-  { href: "/app", label: "Clientes" },
-];
-
-const INTELLIGENCE_NAV = [
-  { href: "/app/library", label: "Biblioteca de inteligencia" },
-];
-
-const BUSINESS_NAV = [
-  { href: "/app/revenue", label: "Revenue global" },
-];
 
 export default async function AppLayout({ children }: AppLayoutProps) {
   const supabase = await createClient();
@@ -32,9 +25,7 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/login");
-  }
+  if (!user) redirect("/login");
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -42,112 +33,84 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     .eq("user_id", user.id)
     .single();
 
+  const role = profile?.role ?? "consultor";
+  const isSuperAdmin = role === "super_admin";
+
+  const workspaceNav = [
+    { href: "/app", label: "Dashboard", icon: <LayoutDashboard size={16} /> },
+    { href: "/app/consulting", label: "Centro de consultoría", icon: <Sparkles size={16} /> },
+    { href: "/app/diagnostics/new", label: "Nuevo diagnóstico", icon: <Stethoscope size={16} /> },
+  ];
+  const operationsNav = [
+    { href: "/app/clients", label: "Clientes", icon: <Users size={16} /> },
+  ];
+  const intelligenceNav = [
+    { href: "/app/library", label: "Biblioteca", icon: <BookOpen size={16} /> },
+  ];
+  const businessNav = [
+    { href: "/app/revenue", label: "Revenue", icon: <TrendingUp size={16} /> },
+  ];
+  const adminNav = [
+    ...(isSuperAdmin
+      ? [{ href: "/app/admin", label: "Super Admin", icon: <Shield size={16} /> }]
+      : []),
+    { href: "/app/settings", label: "Configuración", icon: <Settings size={16} /> },
+  ];
+
+  const emailInitials = user.email
+    ? user.email.split("@")[0].slice(0, 2).toUpperCase()
+    : "CP";
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 md:grid md:grid-cols-[280px_1fr]">
-      <aside className="border-b border-slate-800 bg-slate-950/95 p-5 md:min-h-screen md:border-b-0 md:border-r">
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
-          <p className="text-xs uppercase tracking-[0.22em] text-cyan-400">Consulting Partners</p>
-          <p className="mt-3 text-sm text-slate-300">{user.email}</p>
-          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">{profile?.role ?? "consultor"}</p>
+    <div className="min-h-screen bg-background text-foreground md:grid md:grid-cols-[260px_1fr]">
+      <aside className="flex flex-col border-b border-border bg-surface md:min-h-screen md:border-b-0 md:border-r">
+        <div className="px-5 py-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-accent/20 bg-accent/10">
+              <span className="font-sora text-sm font-bold text-accent">CP</span>
+            </div>
+            <div>
+              <p className="font-sora text-sm font-semibold leading-none text-foreground">Consulting Partners</p>
+              <p className="mt-0.5 text-[10px] uppercase tracking-widest text-foreground/40">Strategic AI Platform</p>
+            </div>
+          </div>
         </div>
-
-        <nav className="mt-6 space-y-5">
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Workspace</p>
-            <div className="mt-2 grid gap-2">
-              {MAIN_NAV.map((item) => (
-                <Link
-                  key={item.href + item.label}
-                  href={item.href}
-                  className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200 transition hover:border-slate-700 hover:bg-slate-900"
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Operacion</p>
-            <div className="mt-2 grid gap-2">
-              {OPERATIONS_NAV.map((item) => (
-                <Link
-                  key={item.href + item.label}
-                  href={item.href}
-                  className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200 transition hover:border-slate-700 hover:bg-slate-900"
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Inteligencia</p>
-            <div className="mt-2 grid gap-2">
-              {INTELLIGENCE_NAV.map((item) => (
-                <Link
-                  key={item.href + item.label}
-                  href={item.href}
-                  className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200 transition hover:border-slate-700 hover:bg-slate-900"
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Negocio</p>
-            <div className="mt-2 grid gap-2">
-              {BUSINESS_NAV.map((item) => (
-                <Link
-                  key={item.href + item.label}
-                  href={item.href}
-                  className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200 transition hover:border-slate-700 hover:bg-slate-900"
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Administracion</p>
-            <div className="mt-2 grid gap-2">
-              {profile?.role === "super_admin" ? (
-                <Link
-                  href="/app/admin"
-                  className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200 transition hover:border-slate-700 hover:bg-slate-900"
-                >
-                  Super Admin
-                </Link>
-              ) : null}
-              <Link
-                href="/app/settings"
-                className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200 transition hover:border-slate-700 hover:bg-slate-900"
-              >
-                Configuracion
-              </Link>
-            </div>
-          </div>
+        <div className="mx-5 h-px bg-border" />
+        <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-5">
+          <NavSection title="Workspace" items={workspaceNav} currentPath="/app" />
+          <NavSection title="Operación" items={operationsNav} currentPath="/app/clients" />
+          <NavSection title="Inteligencia" items={intelligenceNav} currentPath="/app/library" />
+          <NavSection title="Negocio" items={businessNav} currentPath="/app/revenue" />
+          <NavSection title="Sistema" items={adminNav} currentPath="/app/settings" />
         </nav>
-
-        <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/60 p-3">
-          <ThemeSwitcher />
+        <div className="mx-5 h-px bg-border" />
+        <div className="space-y-3 px-4 py-4">
+          <div className="rounded-lg border border-border bg-surface-strong px-3 py-2">
+            <ThemeSwitcher />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border border-accent/20 bg-accent/10">
+                <span className="font-sora text-[10px] font-bold text-accent">{emailInitials}</span>
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-medium text-foreground/80">{user.email}</p>
+                <p className="text-[10px] uppercase tracking-widest text-foreground/40">{role}</p>
+              </div>
+            </div>
+            <form action={signOut}>
+              <button
+                type="submit"
+                title="Cerrar sesión"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-foreground/40 transition-colors hover:border-status-error/40 hover:bg-status-error/10 hover:text-status-error"
+              >
+                <LogOut size={14} />
+              </button>
+            </form>
+          </div>
         </div>
-
-        <form action={signOut} className="mt-8">
-          <button
-            type="submit"
-            className="w-full rounded-xl border border-slate-700 px-3 py-2 text-sm transition hover:bg-slate-800"
-          >
-            Cerrar sesion
-          </button>
-        </form>
       </aside>
-
-      <div className="min-w-0">{children}</div>
+      <div className="min-w-0 overflow-y-auto">{children}</div>
     </div>
   );
 }

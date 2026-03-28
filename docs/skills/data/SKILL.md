@@ -1,5 +1,49 @@
 # SKILL: Datos, Analytics y Métricas
 
+## Metadata Operativa
+- Version: 1.1.0
+- Owner: SAP Product + Tech Lead
+- Ultima revision: 2026-03-28
+- Frecuencia de revision: mensual
+
+## Activadores (Use when)
+- Si el request menciona formularios, componentes interactivos o publicacion a produccion.
+- Si hay riesgo de incumplir usabilidad, accesibilidad o calidad de experiencia.
+
+## Inputs Minimos
+- Objetivo de la tarea.
+- Restricciones tecnicas y de negocio.
+- Datos o artefactos disponibles.
+- Fecha objetivo y owner.
+
+## Output Obligatorio
+1. Diagnostico breve.
+2. Recomendaciones priorizadas.
+3. Riesgos con mitigacion.
+4. Plan de 30 dias con owner y KPI.
+
+## Definition of Done
+- [ ] Incluye decision recomendada y justificacion.
+- [ ] Incluye KPI o criterio de exito medible.
+- [ ] Incluye riesgos y mitigaciones.
+- [ ] Incluye proximos pasos accionables.
+
+## No Hacer
+- No dar recomendaciones genericas sin contexto.
+- No omitir riesgos, trade-offs o limitaciones.
+- No cerrar sin una decision sugerida.
+
+## Bloque Ejecutivo Estandar (siempre al cierre)
+- Supuestos:
+- Riesgos:
+- Decision recomendada:
+- Plan 30 dias:
+
+## Ejemplos del Repositorio
+- src/app/login/page.tsx
+- src/app/api/diagnostics/[id]/execute/route.ts
+- src/lib/supabase/middleware.ts
+
 ## Cuándo consultar este skill
 Antes de: diseñar un dashboard, definir KPIs, implementar analytics,
 o estructurar datos para reportes.
